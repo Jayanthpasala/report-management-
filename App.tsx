@@ -17,7 +17,7 @@ const DEFAULT_OWNER: User = {
   name: 'Jayanth Pasala',
   email: 'jayanthpasala10@gmail.com',
   role: UserRole.OWNER,
-  outlets: [] // Will be populated once outlets load
+  outlets: [] 
 };
 
 const App: React.FC = () => {
@@ -36,7 +36,6 @@ const App: React.FC = () => {
     // Local Data Subscriptions
     const unsubOutlets = collection.subscribe('outlets', (data) => {
       setOutlets(data);
-      // Update owner permissions to include all loaded outlets
       setCurrentUser(prev => ({
         ...prev,
         outlets: data.map(o => o.id)
@@ -58,12 +57,18 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Automatically select first outlet if none selected
+  // Selection Logic: If no outlets exist, force navigation to config
   useEffect(() => {
-    if (outlets.length > 0 && !currentOutlet) {
-      setCurrentOutlet(outlets[0]);
+    if (!isDataLoading) {
+      if (outlets.length > 0) {
+        if (!currentOutlet) {
+          setCurrentOutlet(outlets[0]);
+        }
+      } else if (currentPage !== 'outlets') {
+        setCurrentPage('outlets');
+      }
     }
-  }, [outlets, currentOutlet]);
+  }, [outlets, currentOutlet, isDataLoading, currentPage]);
 
   const handleLogout = () => {
     setCurrentPage('dashboard');
@@ -72,6 +77,8 @@ const App: React.FC = () => {
   const handleAddOutlet = async (o: Outlet) => await collection.add('outlets', o);
   const handleSaveSale = async (s: SaleRecord) => await collection.add('sales', s);
   const handleSaveBill = async (b: VendorBill) => await collection.add('bills', b);
+  const handleRemoveSale = async (id: string) => await collection.remove('sales', id);
+  const handleRemoveBill = async (id: string) => await collection.remove('bills', id);
   const handleAddVendor = async (v: Vendor) => await collection.add('vendors', v);
   const handleUpdateVendor = async (v: Vendor) => await collection.update('vendors', v.id, v);
 
@@ -83,9 +90,13 @@ const App: React.FC = () => {
     );
   }
 
-  const availableOutlets = outlets; // Global owner sees all nodes
-
   const renderPage = () => {
+    // Shared validation: If a page requires an outlet but none exists, return a setup prompt
+    const requiresOutlet = ['dashboard', 'sales', 'vendors', 'calendar', 'mismatches', 'reports'].includes(currentPage);
+    if (requiresOutlet && !currentOutlet && outlets.length === 0) {
+       return <OutletManagement outlets={outlets} onAddOutlet={handleAddOutlet} />;
+    }
+
     switch(currentPage) {
       case 'all-outlets':
         return <AllOutlets outlets={outlets} sales={sales} bills={bills} />;
@@ -96,7 +107,7 @@ const App: React.FC = () => {
       case 'vendors':
         return <Vendors currentOutlet={currentOutlet} outlets={outlets} vendors={vendors} onAddVendor={handleAddVendor} onUpdateVendor={handleUpdateVendor} bills={bills} userRole={currentUser.role} setBills={handleSaveBill} />;
       case 'calendar':
-        return <FinCalendar currentOutlet={currentOutlet} sales={sales} bills={bills} />;
+        return <FinCalendar currentOutlet={currentOutlet} sales={sales} bills={bills} onRemoveSale={handleRemoveSale} onRemoveBill={handleRemoveBill} />;
       case 'mismatches':
         return <Mismatches currentOutlet={currentOutlet} mismatches={mismatches} setMismatches={setMismatches} />;
       case 'outlets':
@@ -113,7 +124,7 @@ const App: React.FC = () => {
       user={currentUser} 
       currentOutlet={currentOutlet} 
       setCurrentOutlet={setCurrentOutlet} 
-      availableOutlets={availableOutlets} 
+      availableOutlets={outlets} 
       onLogout={handleLogout} 
       currentPage={currentPage} 
       onPageChange={setCurrentPage}
