@@ -1,8 +1,6 @@
-
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-// Fix: Use @firebase/storage to avoid shadowing issues with the local firebase/ directory
-import { getStorage } from "@firebase/storage";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAkfHts6pmosmflfpcx7Ryp_8yigpMI3co",

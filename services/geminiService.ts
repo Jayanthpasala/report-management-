@@ -1,7 +1,5 @@
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
-import { GoogleGenAI, Type } from "@google/genai";
-
-// Fix: Added safety check for undefined text input
 const cleanJsonResponse = (text: string | undefined) => {
   if (!text) return "";
   let cleaned = text.trim();
@@ -13,31 +11,28 @@ const cleanJsonResponse = (text: string | undefined) => {
 
 /**
  * Parses payment segregation from POS reports (PDF/Images/Excel).
- * Uses Gemini 3 Pro for high-fidelity extraction and categorization.
+ * Categorizes strictly by payment method.
  */
 export const parsePaymentSegregation = async (base64Data: string, mimeType: string) => {
-  // Fix: Instantiate GoogleGenAI right before the call to ensure the latest API key is used.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const response = await ai.models.generateContent({
+  const response: GenerateContentResponse = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
-    contents: [
-      {
-        parts: [
-          { inlineData: { data: base64Data, mimeType } },
-          { 
-            text: `Extract payment segregation data from this POS report. 
-            MANDATORY CATEGORIZATION: 
-            - 'UPI' (includes GPay, PhonePe, Paytm, QR scans)
-            - 'Card' (includes Visa, Mastercard, Debit, Credit)
-            - 'Cash' (includes physical currency)
-            - 'Online' (includes Zomato, Swiggy, Web Orders)
-            
-            For 'amount', return a PURE NUMBER without currency symbols. 
-            Format: Array of objects with date (YYYY-MM-DD), paymentMethod, and amount.` 
-          }
-        ]
-      }
-    ],
+    contents: {
+      parts: [
+        { inlineData: { data: base64Data, mimeType } },
+        { 
+          text: `Extract the payment summary from this POS report. 
+          STRICT CATEGORIZATION RULES:
+          1. UPI: All digital wallet transfers (GPay, PhonePe, Paytm, QR).
+          2. Card: All Visa, Mastercard, AMEX, Debit, and Credit swipes.
+          3. Cash: Physical currency transactions.
+          4. Online: Aggregators like Zomato, Swiggy, or Direct Web orders.
+          
+          If a specific transaction doesn't fit, use 'Other'.
+          Return data as a JSON array of objects with keys: date (YYYY-MM-DD), paymentMethod, amount (number).` 
+        }
+      ]
+    },
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -46,7 +41,7 @@ export const parsePaymentSegregation = async (base64Data: string, mimeType: stri
           type: Type.OBJECT,
           properties: {
             date: { type: Type.STRING },
-            paymentMethod: { type: Type.STRING, description: "Must be normalized to: Card, UPI, Cash, or Online" },
+            paymentMethod: { type: Type.STRING, description: "Normalized to: Card, UPI, Cash, Online, or Other" },
             amount: { type: Type.NUMBER }
           },
           required: ["date", "paymentMethod", "amount"]
@@ -64,21 +59,18 @@ export const parsePaymentSegregation = async (base64Data: string, mimeType: stri
 };
 
 /**
- * Parses item-wise sales breakdown.
+ * Parses item-wise sales breakdown for product ranking and categorization.
  */
 export const parseItemWiseBreakdown = async (base64Data: string, mimeType: string) => {
-  // Fix: Instantiate GoogleGenAI right before the call to ensure the latest API key is used.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const response = await ai.models.generateContent({
+  const response: GenerateContentResponse = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
-    contents: [
-      {
-        parts: [
-          { inlineData: { data: base64Data, mimeType } },
-          { text: "Extract item-wise sales data. For 'amount', return a PURE NUMBER without currency symbols. Format: Array of objects with date (YYYY-MM-DD), itemCategory, itemName, quantity (number), and amount (number)." }
-        ]
-      }
-    ],
+    contents: {
+      parts: [
+        { inlineData: { data: base64Data, mimeType } },
+        { text: "Extract item-wise sales breakdown. Return a JSON array of objects: date (YYYY-MM-DD), itemCategory, itemName, quantity (number), amount (number)." }
+      ]
+    },
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -107,21 +99,18 @@ export const parseItemWiseBreakdown = async (base64Data: string, mimeType: strin
 };
 
 /**
- * Parses vendor bills and invoices.
+ * Parses vendor bills/invoices for operational expenditure logging.
  */
 export const parseVendorBill = async (base64Data: string, mimeType: string) => {
-  // Fix: Instantiate GoogleGenAI right before the call to ensure the latest API key is used.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const response = await ai.models.generateContent({
+  const response: GenerateContentResponse = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
-    contents: [
-      {
-        parts: [
-          { inlineData: { data: base64Data, mimeType } },
-          { text: "Extract invoice details precisely. 'amount' must be a number without symbols. 'currency' must be the 3-letter ISO code found on the document." }
-        ]
-      }
-    ],
+    contents: {
+      parts: [
+        { inlineData: { data: base64Data, mimeType } },
+        { text: "Extract invoice details. amount must be a number. currency must be ISO code." }
+      ]
+    },
     config: {
       responseMimeType: "application/json",
       responseSchema: {

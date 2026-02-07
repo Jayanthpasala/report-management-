@@ -1,4 +1,3 @@
-
 import { db, storage } from './firebaseConfig.ts';
 import { 
   collection as firestoreCollection, 
@@ -11,8 +10,7 @@ import {
   query,
   orderBy
 } from "firebase/firestore";
-// Fix: Use @firebase/storage to avoid shadowing issues with the local firebase/ directory
-import { ref, uploadBytes, getDownloadURL } from "@firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
   const storageRef = ref(storage, path);
