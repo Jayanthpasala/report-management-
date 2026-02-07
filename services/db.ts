@@ -1,58 +1,77 @@
 
-const DB_PREFIX = 'finout_v1_';
+import { db, storage } from './firebaseConfig.ts';
+import { 
+  collection as firestoreCollection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  setDoc,
+  query,
+  orderBy
+} from "firebase/firestore";
+// Fix: Use @firebase/storage to avoid shadowing issues with the local firebase/ directory
+import { ref, uploadBytes, getDownloadURL } from "@firebase/storage";
 
-export const db = {
-  save: (key: string, data: any) => {
-    try {
-      localStorage.setItem(`${DB_PREFIX}${key}`, JSON.stringify(data));
-      return true;
-    } catch (e) {
-      return false;
-    }
-  },
-  get: (key: string) => {
-    try {
-      const item = localStorage.getItem(`${DB_PREFIX}${key}`);
-      return item ? JSON.parse(item) : null;
-    } catch (e) {
-      return null;
-    }
-  }
+export const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
+  const storageRef = ref(storage, path);
+  const snapshot = await uploadBytes(storageRef, file);
+  return await getDownloadURL(snapshot.ref);
 };
 
 export const collection = {
   subscribe: (name: string, callback: (data: any[]) => void) => {
-    const data = db.get(name) || [];
-    callback(data);
-    
-    // Check for local updates every second
-    const interval = setInterval(() => {
-      const newData = db.get(name) || [];
-      callback(newData);
-    }, 1000);
-
-    return () => clearInterval(interval);
+    try {
+      const q = query(firestoreCollection(db, name));
+      return onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id
+        }));
+        callback(data);
+      }, (error) => {
+        console.error(`Firestore Subscription Error [${name}]:`, error);
+      });
+    } catch (e) {
+      console.error(`Firestore setup error for ${name}:`, e);
+      return () => {}; // Return no-op unsubscription
+    }
   },
 
   add: async (name: string, item: any) => {
-    const id = item.id || `${name.charAt(0).toUpperCase()}-${Date.now()}`;
-    const itemWithId = { ...item, id };
-    const localData = db.get(name) || [];
-    db.save(name, [...localData, itemWithId]);
-    return true;
+    try {
+      if (item.id) {
+        await setDoc(doc(db, name, item.id), item);
+      } else {
+        await addDoc(firestoreCollection(db, name), item);
+      }
+      return true;
+    } catch (e) {
+      console.error("Firestore Add Error:", e);
+      return false;
+    }
   },
 
   update: async (name: string, id: string, updatedItem: any) => {
-    const localData = db.get(name) || [];
-    const updatedLocal = localData.map((i: any) => i.id === id ? { ...i, ...updatedItem } : i);
-    db.save(name, updatedLocal);
-    return true;
+    try {
+      const docRef = doc(db, name, id);
+      await updateDoc(docRef, updatedItem);
+      return true;
+    } catch (e) {
+      console.error("Firestore Update Error:", e);
+      return false;
+    }
   },
 
   remove: async (name: string, id: string) => {
-    const localData = db.get(name) || [];
-    const filteredLocal = localData.filter((i: any) => i.id !== id);
-    db.save(name, filteredLocal);
-    return true;
+    try {
+      const docRef = doc(db, name, id);
+      await deleteDoc(docRef);
+      return true;
+    } catch (e) {
+      console.error("Firestore Remove Error:", e);
+      return false;
+    }
   }
 };

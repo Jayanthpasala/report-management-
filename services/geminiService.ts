@@ -1,9 +1,9 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-const cleanJsonResponse = (text: string) => {
+// Fix: Added safety check for undefined text input
+const cleanJsonResponse = (text: string | undefined) => {
+  if (!text) return "";
   let cleaned = text.trim();
   if (cleaned.startsWith("```")) {
     cleaned = cleaned.replace(/^```(json)?/, "").replace(/```$/, "").trim();
@@ -16,6 +16,8 @@ const cleanJsonResponse = (text: string) => {
  * Uses Gemini 3 Pro for high-fidelity extraction and categorization.
  */
 export const parsePaymentSegregation = async (base64Data: string, mimeType: string) => {
+  // Fix: Instantiate GoogleGenAI right before the call to ensure the latest API key is used.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: [
@@ -65,6 +67,8 @@ export const parsePaymentSegregation = async (base64Data: string, mimeType: stri
  * Parses item-wise sales breakdown.
  */
 export const parseItemWiseBreakdown = async (base64Data: string, mimeType: string) => {
+  // Fix: Instantiate GoogleGenAI right before the call to ensure the latest API key is used.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: [
@@ -106,6 +110,8 @@ export const parseItemWiseBreakdown = async (base64Data: string, mimeType: strin
  * Parses vendor bills and invoices.
  */
 export const parseVendorBill = async (base64Data: string, mimeType: string) => {
+  // Fix: Instantiate GoogleGenAI right before the call to ensure the latest API key is used.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: [
