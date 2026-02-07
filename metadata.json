@@ -1,0 +1,7 @@
+{
+  "name": "report management ",
+  "description": "A comprehensive financial management suite for outlet owners and managers to track sales, manage vendor bills, detect discrepancies, and generate financial reports with Gemini-powered data extraction.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
