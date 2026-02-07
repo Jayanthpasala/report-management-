@@ -1,6 +1,6 @@
 import React from 'react';
-import { ICONS } from '../constants';
-import { User, UserRole } from '../types';
+import { ICONS } from '../constants.tsx';
+import { User, UserRole } from '../types.ts';
 
 interface SidebarProps {
   user: User;
@@ -18,11 +18,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChang
     { id: 'reports', label: 'Financial Reports', icon: ICONS.Reports },
   ];
 
-  // Logic: Owners have administrative capabilities.
   const isOwner = user.role === UserRole.OWNER;
 
   if (isOwner) {
-    // Add Owner-only global items
     menuItems.unshift({ 
       id: 'all-outlets', 
       label: 'Global Comparison', 
@@ -30,8 +28,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChang
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-8"/></svg>
       )
     });
-    
-    // Add bottom administrative configuration
     menuItems.push({ id: 'outlets', label: 'Outlet Config', icon: ICONS.Settings });
   }
 
@@ -70,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChang
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">System Health</span>
            </div>
-           <p className="text-[10px] font-bold text-slate-400 leading-tight">All accounting engines are operating within normal delta ranges.</p>
+           <p className="text-[10px] font-bold text-slate-400 leading-tight">All accounting engines operating normally.</p>
         </div>
       </div>
     </div>

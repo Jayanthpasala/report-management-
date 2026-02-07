@@ -1,16 +1,15 @@
-
 import React, { useState, useEffect } from 'react';
-import { Layout } from './components/Layout';
-import { User, UserRole, Outlet, SaleRecord, VendorBill, Discrepancy, Vendor } from './types';
-import { collection, db } from './services/db';
-import { Dashboard } from './pages/Dashboard';
-import { Sales } from './pages/Sales';
-import { Vendors } from './pages/Vendors';
-import { Mismatches } from './pages/Mismatches';
-import { Reports } from './pages/Reports';
-import { FinCalendar } from './pages/FinCalendar';
-import { OutletManagement } from './pages/OutletManagement';
-import { AllOutlets } from './pages/AllOutlets';
+import { Layout } from './components/Layout.tsx';
+import { User, UserRole, Outlet, SaleRecord, VendorBill, Discrepancy, Vendor } from './types.ts';
+import { collection } from './services/db.ts';
+import { Dashboard } from './pages/Dashboard.tsx';
+import { Sales } from './pages/Sales.tsx';
+import { Vendors } from './pages/Vendors.tsx';
+import { Mismatches } from './pages/Mismatches.tsx';
+import { Reports } from './pages/Reports.tsx';
+import { FinCalendar } from './pages/FinCalendar.tsx';
+import { OutletManagement } from './pages/OutletManagement.tsx';
+import { AllOutlets } from './pages/AllOutlets.tsx';
 
 const DEFAULT_OWNER: User = {
   id: 'owner-001',
@@ -95,7 +94,6 @@ const App: React.FC = () => {
   }
 
   const renderPage = () => {
-    // Shared validation: If a page requires an outlet but none exists, return a setup prompt
     const requiresOutlet = ['dashboard', 'sales', 'vendors', 'calendar', 'mismatches', 'reports'].includes(currentPage);
     if (requiresOutlet && !currentOutlet && outlets.length === 0) {
        return <OutletManagement outlets={outlets} onAddOutlet={handleAddOutlet} onUpdateOutlet={handleUpdateOutlet} onDeleteOutlet={handleDeleteOutlet} />;

@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { Vendor, Outlet } from './types';
+import { Vendor, Outlet } from './types.ts';
 
 export const OUTLETS: Outlet[] = [];
 

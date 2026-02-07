@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Sidebar } from './Sidebar';
-import { User, Outlet } from '../types';
+import { Sidebar } from './Sidebar.tsx';
+import { User, Outlet } from '../types.ts';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -25,7 +25,6 @@ export const Layout: React.FC<LayoutProps> = ({
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
@@ -33,7 +32,6 @@ export const Layout: React.FC<LayoutProps> = ({
         />
       )}
 
-      {/* Sidebar Drawer */}
       <div className={`fixed inset-y-0 left-0 z-50 transform lg:relative lg:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} w-64`}>
         <Sidebar 
           user={user} 
@@ -46,7 +44,6 @@ export const Layout: React.FC<LayoutProps> = ({
       </div>
       
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header */}
         <header className="h-20 glass border-b border-slate-200 flex items-center justify-between px-4 md:px-8 z-30">
           <div className="flex items-center space-x-4">
             <button 
@@ -104,7 +101,6 @@ export const Layout: React.FC<LayoutProps> = ({
           </div>
         </header>
 
-        {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-7xl mx-auto">
             {children}
