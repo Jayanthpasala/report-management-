@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ICONS } from '../constants';
 import { User, UserRole } from '../types';
@@ -7,10 +6,9 @@ interface SidebarProps {
   user: User;
   currentPage: string;
   onPageChange: (page: string) => void;
-  onLogout: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChange, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChange }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Outlet Dashboard', icon: ICONS.Dashboard },
     { id: 'sales', label: 'Sales & Uploads', icon: ICONS.Sales },
@@ -74,14 +72,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChang
            </div>
            <p className="text-[10px] font-bold text-slate-400 leading-tight">All accounting engines are operating within normal delta ranges.</p>
         </div>
-
-        <button 
-          onClick={onLogout}
-          className="w-full flex items-center space-x-4 px-5 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest text-slate-500 hover:bg-rose-500 hover:text-white transition-all group"
-        >
-          <svg className="group-hover:scale-110 transition-transform" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
-          <span>End Session</span>
-        </button>
       </div>
     </div>
   );

@@ -70,11 +70,15 @@ const App: React.FC = () => {
     }
   }, [outlets, currentOutlet, isDataLoading, currentPage]);
 
-  const handleLogout = () => {
-    setCurrentPage('dashboard');
+  const handleAddOutlet = async (o: Outlet) => await collection.add('outlets', o);
+  const handleUpdateOutlet = async (o: Outlet) => await collection.update('outlets', o.id, o);
+  const handleDeleteOutlet = async (id: string) => {
+    await collection.remove('outlets', id);
+    if (currentOutlet?.id === id) {
+      setCurrentOutlet(null);
+    }
   };
 
-  const handleAddOutlet = async (o: Outlet) => await collection.add('outlets', o);
   const handleSaveSale = async (s: SaleRecord) => await collection.add('sales', s);
   const handleSaveBill = async (b: VendorBill) => await collection.add('bills', b);
   const handleRemoveSale = async (id: string) => await collection.remove('sales', id);
@@ -94,7 +98,7 @@ const App: React.FC = () => {
     // Shared validation: If a page requires an outlet but none exists, return a setup prompt
     const requiresOutlet = ['dashboard', 'sales', 'vendors', 'calendar', 'mismatches', 'reports'].includes(currentPage);
     if (requiresOutlet && !currentOutlet && outlets.length === 0) {
-       return <OutletManagement outlets={outlets} onAddOutlet={handleAddOutlet} />;
+       return <OutletManagement outlets={outlets} onAddOutlet={handleAddOutlet} onUpdateOutlet={handleUpdateOutlet} onDeleteOutlet={handleDeleteOutlet} />;
     }
 
     switch(currentPage) {
@@ -111,7 +115,7 @@ const App: React.FC = () => {
       case 'mismatches':
         return <Mismatches currentOutlet={currentOutlet} mismatches={mismatches} setMismatches={setMismatches} />;
       case 'outlets':
-        return <OutletManagement outlets={outlets} onAddOutlet={handleAddOutlet} />;
+        return <OutletManagement outlets={outlets} onAddOutlet={handleAddOutlet} onUpdateOutlet={handleUpdateOutlet} onDeleteOutlet={handleDeleteOutlet} />;
       case 'reports':
         return <Reports currentOutlet={currentOutlet} sales={sales} bills={bills} />;
       default:
@@ -125,7 +129,6 @@ const App: React.FC = () => {
       currentOutlet={currentOutlet} 
       setCurrentOutlet={setCurrentOutlet} 
       availableOutlets={outlets} 
-      onLogout={handleLogout} 
       currentPage={currentPage} 
       onPageChange={setCurrentPage}
     >

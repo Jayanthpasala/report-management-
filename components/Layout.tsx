@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { User, Outlet } from '../types';
@@ -9,7 +8,6 @@ interface LayoutProps {
   currentOutlet: Outlet | null;
   setCurrentOutlet: (outlet: Outlet) => void;
   availableOutlets: Outlet[];
-  onLogout: () => void;
   currentPage: string;
   onPageChange: (page: string) => void;
 }
@@ -20,7 +18,6 @@ export const Layout: React.FC<LayoutProps> = ({
   currentOutlet,
   setCurrentOutlet,
   availableOutlets,
-  onLogout,
   currentPage,
   onPageChange
 }) => {
@@ -45,7 +42,6 @@ export const Layout: React.FC<LayoutProps> = ({
             onPageChange(page);
             setIsSidebarOpen(false);
           }}
-          onLogout={onLogout}
         />
       </div>
       
