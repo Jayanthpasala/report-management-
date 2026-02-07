@@ -1,8 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// The Google GenAI SDK automatically utilizes the provided API key through the secure 
-// environment variable `process.env.API_KEY`, ensuring all operations are authenticated.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const cleanJsonResponse = (text: string) => {
@@ -14,8 +12,8 @@ const cleanJsonResponse = (text: string) => {
 };
 
 /**
- * Parses payment segregation from POS reports (PDF/Images).
- * Uses Gemini 3 Pro for high-fidelity extraction of financial tables.
+ * Parses payment segregation from POS reports (PDF/Images/Excel).
+ * Uses Gemini 3 Pro for high-fidelity extraction and categorization.
  */
 export const parsePaymentSegregation = async (base64Data: string, mimeType: string) => {
   const response = await ai.models.generateContent({
@@ -24,7 +22,17 @@ export const parsePaymentSegregation = async (base64Data: string, mimeType: stri
       {
         parts: [
           { inlineData: { data: base64Data, mimeType } },
-          { text: "Extract payment segregation data from this POS report. MANDATORY: Payment methods MUST be exactly one of: 'Card', 'UPI', 'Cash', 'Online'. For 'amount', return a PURE NUMBER without currency symbols. Format: Array of objects with date (YYYY-MM-DD), paymentMethod, and amount." }
+          { 
+            text: `Extract payment segregation data from this POS report. 
+            MANDATORY CATEGORIZATION: 
+            - 'UPI' (includes GPay, PhonePe, Paytm, QR scans)
+            - 'Card' (includes Visa, Mastercard, Debit, Credit)
+            - 'Cash' (includes physical currency)
+            - 'Online' (includes Zomato, Swiggy, Web Orders)
+            
+            For 'amount', return a PURE NUMBER without currency symbols. 
+            Format: Array of objects with date (YYYY-MM-DD), paymentMethod, and amount.` 
+          }
         ]
       }
     ],
@@ -36,7 +44,7 @@ export const parsePaymentSegregation = async (base64Data: string, mimeType: stri
           type: Type.OBJECT,
           properties: {
             date: { type: Type.STRING },
-            paymentMethod: { type: Type.STRING, description: "Must be Card, UPI, Cash, or Online" },
+            paymentMethod: { type: Type.STRING, description: "Must be normalized to: Card, UPI, Cash, or Online" },
             amount: { type: Type.NUMBER }
           },
           required: ["date", "paymentMethod", "amount"]
@@ -55,7 +63,6 @@ export const parsePaymentSegregation = async (base64Data: string, mimeType: stri
 
 /**
  * Parses item-wise sales breakdown.
- * Uses Gemini 3 Pro to handle complex multi-column spreadsheets and PDFs.
  */
 export const parseItemWiseBreakdown = async (base64Data: string, mimeType: string) => {
   const response = await ai.models.generateContent({
