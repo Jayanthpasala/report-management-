@@ -21,12 +21,11 @@ export const db = {
 };
 
 export const collection = {
-  // Simple polling or local state update shim since we no longer use Firebase subscriptions
   subscribe: (name: string, callback: (data: any[]) => void) => {
     const data = db.get(name) || [];
     callback(data);
     
-    // Polling as a fallback for local "sync" across components if needed
+    // Check for local updates every second
     const interval = setInterval(() => {
       const newData = db.get(name) || [];
       callback(newData);

@@ -20,12 +20,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChang
     { id: 'reports', label: 'Financial Reports', icon: ICONS.Reports },
   ];
 
-  // Logic: Owners have everything. 
-  // AllOutlets (Global Comparison) and User Management (Access Control) are Owner-only.
+  // Logic: Owners have administrative capabilities.
   const isOwner = user.role === UserRole.OWNER;
 
   if (isOwner) {
-    // Add Owner-only items
+    // Add Owner-only global items
     menuItems.unshift({ 
       id: 'all-outlets', 
       label: 'Global Comparison', 
@@ -34,9 +33,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, onPageChang
       )
     });
     
-    // Add bottom administrative items
+    // Add bottom administrative configuration
     menuItems.push({ id: 'outlets', label: 'Outlet Config', icon: ICONS.Settings });
-    menuItems.push({ id: 'users', label: 'Access Control', icon: ICONS.Users });
   }
 
   return (

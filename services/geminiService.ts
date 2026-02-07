@@ -1,6 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
+// The Google GenAI SDK automatically utilizes the provided API key through the secure 
+// environment variable `process.env.API_KEY`, ensuring all operations are authenticated.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const cleanJsonResponse = (text: string) => {
@@ -11,14 +13,18 @@ const cleanJsonResponse = (text: string) => {
   return cleaned;
 };
 
+/**
+ * Parses payment segregation from POS reports (PDF/Images).
+ * Uses Gemini 3 Pro for high-fidelity extraction of financial tables.
+ */
 export const parsePaymentSegregation = async (base64Data: string, mimeType: string) => {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3-pro-preview",
     contents: [
       {
         parts: [
           { inlineData: { data: base64Data, mimeType } },
-          { text: "Extract payment segregation data. MANDATORY: Payment methods MUST be exactly one of: 'Card', 'UPI', 'Cash', 'Online'. For 'amount', return a PURE NUMBER. Format: Array of objects with date (YYYY-MM-DD), paymentMethod, and amount." }
+          { text: "Extract payment segregation data from this POS report. MANDATORY: Payment methods MUST be exactly one of: 'Card', 'UPI', 'Cash', 'Online'. For 'amount', return a PURE NUMBER without currency symbols. Format: Array of objects with date (YYYY-MM-DD), paymentMethod, and amount." }
         ]
       }
     ],
@@ -47,14 +53,18 @@ export const parsePaymentSegregation = async (base64Data: string, mimeType: stri
   }
 };
 
+/**
+ * Parses item-wise sales breakdown.
+ * Uses Gemini 3 Pro to handle complex multi-column spreadsheets and PDFs.
+ */
 export const parseItemWiseBreakdown = async (base64Data: string, mimeType: string) => {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3-pro-preview",
     contents: [
       {
         parts: [
           { inlineData: { data: base64Data, mimeType } },
-          { text: "Extract item-wise sales. For 'amount', return a PURE NUMBER without currency symbols. Format: Array of objects with date (YYYY-MM-DD), itemCategory, itemName, quantity (number), and amount (number)." }
+          { text: "Extract item-wise sales data. For 'amount', return a PURE NUMBER without currency symbols. Format: Array of objects with date (YYYY-MM-DD), itemCategory, itemName, quantity (number), and amount (number)." }
         ]
       }
     ],
@@ -80,18 +90,22 @@ export const parseItemWiseBreakdown = async (base64Data: string, mimeType: strin
   try {
     return JSON.parse(cleanJsonResponse(response.text));
   } catch (e) {
+    console.error("Failed to parse Item-wise response", e);
     return [];
   }
 };
 
+/**
+ * Parses vendor bills and invoices.
+ */
 export const parseVendorBill = async (base64Data: string, mimeType: string) => {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3-pro-preview",
     contents: [
       {
         parts: [
           { inlineData: { data: base64Data, mimeType } },
-          { text: "Extract invoice details. amount must be a number without symbols. currency must be 3-letter ISO code." }
+          { text: "Extract invoice details precisely. 'amount' must be a number without symbols. 'currency' must be the 3-letter ISO code found on the document." }
         ]
       }
     ],
@@ -114,6 +128,7 @@ export const parseVendorBill = async (base64Data: string, mimeType: string) => {
   try {
     return JSON.parse(cleanJsonResponse(response.text));
   } catch (e) {
+    console.error("Failed to parse Vendor Bill", e);
     return null;
   }
 };
