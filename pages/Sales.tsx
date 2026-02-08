@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SaleRecord, SaleRecordType, Outlet } from '../types.ts';
 import { ICONS } from '../constants.tsx';
 import { parsePaymentSegregation, parseItemWiseBreakdown } from '../services/geminiService.ts';
@@ -16,6 +16,8 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
   const [itemsFile, setItemsFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [fxRate, setFxRate] = useState<number>(1);
+  const [isFxVerified, setIsFxVerified] = useState(false);
   const [analysisReport, setAnalysisReport] = useState<{
     paymentRecords: SaleRecord[],
     itemRecords: SaleRecord[],
@@ -23,7 +25,9 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
     totalItemValue: number,
     paymentTotals: Record<string, number>,
     paymentFile: File,
-    itemsFile: File
+    itemsFile: File,
+    baseCurrency: string,
+    targetOutletId: string
   } | null>(null);
 
   const cleanNumber = (item: any): number => {
@@ -33,6 +37,16 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
     const cleaned = String(val).replace(/[^0-9.-]+/g, "");
     const parsed = parseFloat(cleaned);
     return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const normalizeDate = (d: any): string => {
+    try {
+      const date = new Date(d);
+      if (isNaN(date.getTime())) return new Date().toISOString().split('T')[0];
+      return date.toISOString().split('T')[0];
+    } catch {
+      return new Date().toISOString().split('T')[0];
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'payment' | 'items') => {
@@ -45,11 +59,14 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
 
   const handleProceed = async () => {
     if (!paymentFile || !itemsFile || !currentOutlet) return;
+    const targetOutletId = currentOutlet.id;
     setIsProcessing(true);
     setStatusMsg("AI reconciling payment streams and item data...");
     try {
       const rate = await getExchangeRateToINR(currentOutlet.currency);
-      
+      setFxRate(rate);
+      setIsFxVerified(currentOutlet.currency === 'INR');
+
       const readFile = (file: File): Promise<string> => new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve((reader.result as string).split(',')[1]);
@@ -71,8 +88,8 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
           const rawAmount = cleanNumber(item);
           return {
             id: `S-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            date: item.date || new Date().toISOString().split('T')[0],
-            outletId: currentOutlet.id,
+            date: normalizeDate(item.date),
+            outletId: targetOutletId,
             type: type,
             paymentMethod: item.paymentMethod || 'Other',
             amount: rawAmount,
@@ -100,7 +117,9 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
         totalItemValue: iRecords.reduce((sum, r) => sum + r.amount, 0),
         paymentTotals: payTotals,
         paymentFile: paymentFile,
-        itemsFile: itemsFile
+        itemsFile: itemsFile,
+        baseCurrency: currentOutlet.currency,
+        targetOutletId
       });
       setStatusMsg(null);
     } catch (err) {
@@ -112,29 +131,44 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
   };
 
   const confirmReport = async () => {
-    if (analysisReport && currentOutlet) {
-      setStatusMsg("Synchronizing with global ledger...");
+    if (analysisReport) {
+      setStatusMsg("Synchronizing with cloud storage...");
       try {
-        const payUrl = await uploadFile(analysisReport.paymentFile, `sales/${currentOutlet.id}/${Date.now()}_payment.pdf`);
-        const itemUrl = await uploadFile(analysisReport.itemsFile, `sales/${currentOutlet.id}/${Date.now()}_items.pdf`);
+        const payUrl = await uploadFile(analysisReport.paymentFile, `sales/${analysisReport.targetOutletId}/${Date.now()}_payment.pdf`);
+        const itemUrl = await uploadFile(analysisReport.itemsFile, `sales/${analysisReport.targetOutletId}/${Date.now()}_items.pdf`);
 
         const allRecords = [
-          ...analysisReport.paymentRecords.map(r => ({ ...r, fileData: payUrl, fileMimeType: analysisReport.paymentFile.type })),
-          ...analysisReport.itemRecords.map(r => ({ ...r, fileData: itemUrl, fileMimeType: analysisReport.itemsFile.type }))
+          ...analysisReport.paymentRecords.map(r => ({
+            ...r,
+            amountINR: r.amount * fxRate,
+            fileData: payUrl,
+            fileMimeType: analysisReport.paymentFile.type
+          })),
+          ...analysisReport.itemRecords.map(r => ({
+            ...r,
+            amountINR: r.amount * fxRate,
+            fileData: itemUrl,
+            fileMimeType: analysisReport.itemsFile.type
+          }))
         ];
 
+        // Process sequentially through the abstraction
         for(const r of allRecords) {
            await setSales(r);
         }
 
-        setAnalysisReport(null);
-        setPaymentFile(null);
-        setItemsFile(null);
         setStatusMsg("Success! Ledger updated.");
-        setTimeout(() => setStatusMsg(null), 3000);
+        setTimeout(() => {
+          setAnalysisReport(null);
+          setPaymentFile(null);
+          setItemsFile(null);
+          setFxRate(1);
+          setIsFxVerified(false);
+          setStatusMsg(null);
+        }, 1500);
       } catch (err) {
-        console.error(err);
-        setStatusMsg("Failed to synchronize data.");
+        console.error("Ledger synchronization failed:", err);
+        setStatusMsg("Failed to synchronize data. Check network.");
       }
     }
   };
@@ -185,32 +219,86 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
       )}
 
       {analysisReport && (
-        <div className="bg-white rounded-[3.5rem] border border-slate-200 shadow-3xl overflow-hidden p-10 animate-in zoom-in-95">
-           <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Categorization Result</h3>
-              <div className="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-full border border-emerald-100">Verified by Gemini</div>
-           </div>
+        <div className="space-y-8 animate-in zoom-in-95">
+           {analysisReport.baseCurrency !== 'INR' && (
+             <div className="bg-slate-900 text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
+                <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+                   <div className="space-y-2">
+                      <div className="flex items-center space-x-3">
+                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                         <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">FX Conversion Engine</p>
+                      </div>
+                      <h3 className="text-2xl font-black uppercase tracking-tight">Verify Exchange Rate</h3>
+                      <p className="text-slate-400 text-xs font-medium max-w-xs">Data extracted in {analysisReport.baseCurrency}. Verify the rate for INR settlement.</p>
+                   </div>
+                   
+                   <div className="flex flex-col md:flex-row items-center gap-6">
+                      <div className="bg-white/5 p-6 rounded-3xl border border-white/10 flex items-center space-x-6">
+                         <div className="text-center">
+                            <p className="text-[8px] font-black text-indigo-300 uppercase mb-1">Base (1 {analysisReport.baseCurrency})</p>
+                            <p className="text-2xl font-black">₹</p>
+                         </div>
+                         <input 
+                            type="number"
+                            step="0.01"
+                            value={fxRate}
+                            onChange={(e) => setFxRate(parseFloat(e.target.value) || 0)}
+                            className="bg-slate-800 border-0 rounded-2xl p-4 text-xl font-black w-32 focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
+                         />
+                         <button 
+                            onClick={() => setIsFxVerified(true)}
+                            className={`p-4 rounded-2xl transition-all ${isFxVerified ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/50 hover:bg-white/20'}`}
+                         >
+                            <ICONS.Check className="w-6 h-6" />
+                         </button>
+                      </div>
+                      
+                      <div className="text-right">
+                         <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Converted Value</p>
+                         <p className="text-3xl font-black text-emerald-400">₹{(analysisReport.totalPaymentValue * fxRate).toLocaleString()}</p>
+                      </div>
+                   </div>
+                </div>
+             </div>
+           )}
 
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-              <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100">
-                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Payment Breakdown</p>
-                 <div className="space-y-3">
-                    {Object.entries(analysisReport.paymentTotals).map(([method, total]) => (
-                       <div key={method} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                          <span className="text-[11px] font-black text-slate-900 uppercase">{method}</span>
-                          <span className="text-[11px] font-black text-slate-900">{symbol}{total.toLocaleString()}</span>
-                       </div>
-                    ))}
-                 </div>
+           <div className="bg-white rounded-[3.5rem] border border-slate-200 shadow-3xl overflow-hidden p-10">
+              <div className="flex items-center justify-between mb-8">
+                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Categorization Result</h3>
+                 <div className="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-full border border-emerald-100">Verified by Gemini</div>
               </div>
 
-              <div className="flex flex-col justify-center items-center bg-slate-900 p-8 rounded-3xl text-white relative overflow-hidden shadow-2xl">
-                 <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-600/30 rounded-full blur-[60px]"></div>
-                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-2 relative z-10">Total Verified Sales</p>
-                 <h2 className="text-5xl font-black tracking-tighter relative z-10">{symbol}{analysisReport.totalPaymentValue.toLocaleString()}</h2>
-                 <div className="mt-8 flex space-x-3 relative z-10">
-                    <button onClick={confirmReport} className="px-8 py-4 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-950/40">Commit Entry</button>
-                    <button onClick={() => setAnalysisReport(null)} className="px-8 py-4 bg-white/10 text-white text-[10px] font-black uppercase rounded-2xl border border-white/10">Discard</button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                 <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Payment Breakdown ({analysisReport.baseCurrency})</p>
+                    <div className="space-y-3">
+                       {Object.entries(analysisReport.paymentTotals).map(([method, total]) => (
+                          <div key={method} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                             <span className="text-[11px] font-black text-slate-900 uppercase">{method}</span>
+                             <span className="text-[11px] font-black text-slate-900">{symbol}{total.toLocaleString()}</span>
+                          </div>
+                       ))}
+                    </div>
+                 </div>
+
+                 <div className="flex flex-col justify-center items-center bg-slate-900 p-8 rounded-3xl text-white relative overflow-hidden shadow-2xl">
+                    <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-600/30 rounded-full blur-[60px]"></div>
+                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-2 relative z-10">Settlement in INR</p>
+                    <h2 className="text-5xl font-black tracking-tighter relative z-10">₹{(analysisReport.totalPaymentValue * fxRate).toLocaleString()}</h2>
+                    <p className="text-[10px] font-bold text-slate-500 mt-2 uppercase tracking-widest opacity-60">
+                      Rate: 1 {analysisReport.baseCurrency} = ₹{fxRate}
+                    </p>
+                    <div className="mt-8 flex space-x-3 relative z-10 w-full">
+                       <button 
+                        onClick={confirmReport} 
+                        disabled={!isFxVerified && analysisReport.baseCurrency !== 'INR'}
+                        className="flex-1 px-8 py-5 bg-indigo-600 text-white text-[11px] font-black uppercase rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-950/40 disabled:opacity-50"
+                       >
+                         Commit Ledger Entry
+                       </button>
+                       <button onClick={() => setAnalysisReport(null)} className="flex-1 px-8 py-5 bg-white/10 text-white text-[11px] font-black uppercase rounded-2xl border border-white/10">Discard Analysis</button>
+                    </div>
                  </div>
               </div>
            </div>
@@ -218,7 +306,7 @@ export const Sales: React.FC<SalesProps> = ({ currentOutlet, setSales }) => {
       )}
 
       {statusMsg && (
-        <div className="flex items-center justify-center space-x-3 bg-white py-4 px-8 rounded-full border border-slate-200 shadow-xl w-fit mx-auto">
+        <div className="flex items-center justify-center space-x-3 bg-white py-4 px-8 rounded-full border border-slate-200 shadow-xl w-fit mx-auto animate-in slide-in-from-bottom-4">
            <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
            <div className="font-black uppercase text-[10px] text-slate-500 tracking-widest">{statusMsg}</div>
         </div>

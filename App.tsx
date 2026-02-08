@@ -103,7 +103,7 @@ const App: React.FC = () => {
       case 'all-outlets':
         return <AllOutlets outlets={outlets} sales={sales} bills={bills} />;
       case 'dashboard':
-        return <Dashboard currentOutlet={currentOutlet} sales={sales} bills={bills} mismatches={mismatches} onPageChange={setCurrentPage} />;
+        return <Dashboard currentOutlet={currentOutlet} outlets={outlets} sales={sales} bills={bills} mismatches={mismatches} onPageChange={setCurrentPage} />;
       case 'sales':
         return <Sales currentOutlet={currentOutlet} sales={sales} setSales={handleSaveSale} />;
       case 'vendors':
@@ -117,7 +117,7 @@ const App: React.FC = () => {
       case 'reports':
         return <Reports currentOutlet={currentOutlet} sales={sales} bills={bills} />;
       default:
-        return <Dashboard currentOutlet={currentOutlet} sales={sales} bills={bills} mismatches={mismatches} onPageChange={setCurrentPage} />;
+        return <Dashboard currentOutlet={currentOutlet} outlets={outlets} sales={sales} bills={bills} mismatches={mismatches} onPageChange={setCurrentPage} />;
     }
   };
 

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { VendorBill, Outlet, UserRole, Vendor, ExpenseCategory } from '../types.ts';
 import { ICONS } from '../constants.tsx';
@@ -22,7 +23,7 @@ export const Vendors: React.FC<VendorsProps> = ({ currentOutlet, outlets, vendor
   const [showFixedForm, setShowFixedForm] = useState(false);
   const [newVendorData, setNewVendorData] = useState({ name: '', category: ExpenseCategory.RAW_MATERIAL, outletId: currentOutlet?.id || '' });
   const [fixedData, setFixedData] = useState({ category: ExpenseCategory.RENT, amount: '', date: new Date().toISOString().split('T')[0], note: '' });
-  const [billAnalysis, setBillAnalysis] = useState<{ raw: any; bill: VendorBill; file: File } | null>(null);
+  const [billAnalysis, setBillAnalysis] = useState<{ raw: any; bill: VendorBill; file: File; manualRate?: number } | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' | 'info' } | null>(null);
 
   const outletVendors = vendors.filter(v => v.outletId === currentOutlet?.id);
@@ -66,7 +67,7 @@ export const Vendors: React.FC<VendorsProps> = ({ currentOutlet, outlets, vendor
           status: 'Approved',
           fileName: file.name
         };
-        setBillAnalysis({ raw: data, bill: newBill, file: file });
+        setBillAnalysis({ raw: data, bill: newBill, file: file, manualRate: rate });
         setStatusMsg(null);
       }
     } catch (err) { setStatusMsg({ text: "Extraction failed.", type: 'error' }); } finally { setProcessingVendorId(null); }
@@ -77,8 +78,10 @@ export const Vendors: React.FC<VendorsProps> = ({ currentOutlet, outlets, vendor
       setStatusMsg({ text: 'Syncing to cloud...', type: 'info' });
       try {
         const fileUrl = await uploadFile(billAnalysis.file, `bills/${currentOutlet.id}/${Date.now()}_${billAnalysis.file.name}`);
+        const finalRate = billAnalysis.manualRate || 1;
         const finalizedBill = { 
           ...billAnalysis.bill, 
+          amountINR: billAnalysis.bill.amount * finalRate,
           fileData: fileUrl, 
           fileMimeType: billAnalysis.file.type 
         };
@@ -92,44 +95,27 @@ export const Vendors: React.FC<VendorsProps> = ({ currentOutlet, outlets, vendor
     }
   };
 
-  const handleFixedSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentOutlet) return;
-    const rate = await getExchangeRateToINR(currentOutlet.currency);
-    const amt = parseFloat(fixedData.amount);
-    const newBill: VendorBill = {
-      id: `FIX-${Date.now()}`,
-      vendorId: 'INTERNAL',
-      vendorName: fixedData.category,
-      outletId: currentOutlet.id,
-      date: fixedData.date,
-      amount: amt,
-      currency: currentOutlet.currency,
-      amountINR: amt * rate,
-      category: fixedData.category,
-      status: 'Approved',
-      isFixedExpense: true,
-      note: fixedData.note
-    };
-    await setBills(newBill);
-    setShowFixedForm(false);
-    setFixedData({ ...fixedData, amount: '', note: '' });
-    setStatusMsg({ text: `${fixedData.category} logged`, type: 'success' });
-    setTimeout(() => setStatusMsg(null), 3000);
-  };
-
+  // Fix: Added handleAddVendorSubmit to handle registration of new vendors
   const handleAddVendorSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentOutlet) return;
-    const v: Vendor = {
+    if (!newVendorData.name || !currentOutlet) return;
+    
+    onAddVendor({
       id: `V-${Date.now()}`,
       name: newVendorData.name,
       outletId: currentOutlet.id,
       category: newVendorData.category,
       totalSpent: 0
-    };
-    onAddVendor(v);
-    setNewVendorData({ name: '', category: ExpenseCategory.RAW_MATERIAL, outletId: currentOutlet.id });
+    });
+    
+    // Reset form fields
+    setNewVendorData({ 
+      name: '', 
+      category: ExpenseCategory.RAW_MATERIAL, 
+      outletId: currentOutlet.id 
+    });
+    setStatusMsg({ text: 'Vendor registered successfully', type: 'success' });
+    setTimeout(() => setStatusMsg(null), 3000);
   };
 
   return (
@@ -180,16 +166,48 @@ export const Vendors: React.FC<VendorsProps> = ({ currentOutlet, outlets, vendor
 
       {billAnalysis && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[100] p-6 backdrop-blur-md animate-in fade-in">
-           <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl max-w-md w-full animate-in zoom-in-95">
-              <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-6 mx-auto">
-                 <ICONS.Check className="w-10 h-10" />
+           <div className="bg-white p-10 rounded-[3.5rem] shadow-2xl max-w-lg w-full animate-in zoom-in-95 space-y-6">
+              <div className="flex justify-between items-center">
+                 <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                    <ICONS.Check className="w-8 h-8" />
+                 </div>
+                 <span className="px-4 py-2 bg-slate-50 text-slate-400 rounded-full text-[9px] font-black uppercase tracking-widest">AI Extraction Complete</span>
               </div>
-              <h3 className="text-xl font-black uppercase mb-2 text-center">Confirm Cloud Entry</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase mb-8 text-center">{billAnalysis.bill.vendorName}</p>
-              <p className="text-5xl font-black mb-10 text-center tracking-tighter text-slate-900">{getCurrencySymbol(billAnalysis.bill.currency)}{billAnalysis.bill.amount}</p>
+              
+              <div className="text-center">
+                 <h3 className="text-xl font-black uppercase text-slate-900 tracking-tight">{billAnalysis.bill.vendorName}</h3>
+                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{billAnalysis.bill.date}</p>
+              </div>
+
+              <div className="bg-slate-50 p-6 rounded-3xl space-y-4">
+                 <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bill Amount</span>
+                    <span className="text-2xl font-black text-slate-900">{getCurrencySymbol(billAnalysis.bill.currency)}{billAnalysis.bill.amount.toLocaleString()}</span>
+                 </div>
+                 
+                 {billAnalysis.bill.currency !== 'INR' && (
+                   <div className="space-y-4 pt-2">
+                      <div className="flex items-center justify-between">
+                         <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Verify FX Rate (to INR)</span>
+                         <input 
+                           type="number" 
+                           step="0.01"
+                           className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-black w-24 text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                           value={billAnalysis.manualRate}
+                           onChange={(e) => setBillAnalysis({ ...billAnalysis, manualRate: parseFloat(e.target.value) || 0 })}
+                         />
+                      </div>
+                      <div className="flex justify-between items-center bg-indigo-600 text-white p-4 rounded-2xl shadow-xl">
+                         <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Settlement Amount</span>
+                         <span className="text-xl font-black">₹{((billAnalysis.bill.amount * (billAnalysis.manualRate || 0))).toLocaleString()}</span>
+                      </div>
+                   </div>
+                 )}
+              </div>
+
               <div className="flex space-x-4">
-                 <button onClick={confirmBill} className="flex-1 py-5 bg-indigo-600 text-white font-black uppercase text-xs rounded-2xl shadow-xl shadow-indigo-100">Confirm & Sync</button>
-                 <button onClick={() => setBillAnalysis(null)} className="flex-1 py-5 bg-slate-100 text-slate-400 font-black uppercase text-xs rounded-2xl">Cancel</button>
+                 <button onClick={confirmBill} className="flex-1 py-5 bg-slate-900 text-white font-black uppercase text-[10px] tracking-[0.2em] rounded-2xl shadow-2xl hover:bg-indigo-600 transition-all">Confirm & Sync</button>
+                 <button onClick={() => setBillAnalysis(null)} className="flex-1 py-5 bg-slate-100 text-slate-400 font-black uppercase text-[10px] tracking-[0.2em] rounded-2xl">Discard</button>
               </div>
            </div>
         </div>
