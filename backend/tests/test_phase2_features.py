@@ -432,9 +432,10 @@ class TestBulkDocumentActions:
     
     def test_bulk_action_staff_forbidden(self, api_client, base_url, auth_headers_staff):
         print("\n=== Testing Bulk Actions (Staff - Should Fail) ===")
+        import json
         form_data = {
             'action': 'approve',
-            'document_ids': '["test-id"]'
+            'document_ids': json.dumps(["test-id"])
         }
         
         response = api_client.post(
