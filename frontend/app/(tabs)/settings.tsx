@@ -13,9 +13,15 @@ export default function SettingsScreen() {
   const { user, organization, outlets, logout } = useAuth();
   const router = useRouter();
   const [stats, setStats] = useState<any>(null);
+  const [notifPrefs, setNotifPrefs] = useState<any>({
+    missing_reports: true, anomaly_alerts: true, low_confidence: true, weekly_summary: true, push_enabled: true,
+  });
+  const [processorInfo, setProcessorInfo] = useState<any>(null);
 
   useEffect(() => {
     api.stats().then(setStats).catch(() => {});
+    api.getNotificationPrefs().then(setNotifPrefs).catch(() => {});
+    api.getProcessorInfo().then(setProcessorInfo).catch(() => {});
   }, []);
 
   const handleLogout = () => {
