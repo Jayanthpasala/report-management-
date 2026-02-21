@@ -412,9 +412,10 @@ class TestBulkDocumentActions:
         doc_ids = [d["id"] for d in docs[:2]]
         print(f"Flagging {len(doc_ids)} documents for review")
         
+        import json
         form_data = {
             'action': 'flag_review',
-            'document_ids': str(doc_ids).replace("'", '"')
+            'document_ids': json.dumps(doc_ids)
         }
         
         response = api_client.post(
