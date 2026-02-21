@@ -229,17 +229,24 @@ class TestDocumentUploadPhase3:
         """Verify Phase 3 upload fields are present in existing documents"""
         print("\n=== Testing Phase 3 Upload Fields via GET ===")
         
-        response = api_client.get(f"{base_url}/api/documents?limit=1", headers=auth_headers_owner)
-        assert response.status_code == 200
+        # Get a specific document ID first
+        list_response = api_client.get(f"{base_url}/api/documents?limit=1", headers=auth_headers_owner)
+        assert list_response.status_code == 200
         
-        docs = response.json()["documents"]
+        docs = list_response.json()["documents"]
         if not docs:
             pytest.skip("No documents available")
         
-        doc = docs[0]
+        doc_id = docs[0]["id"]
+        
+        # Get full document details (includes all fields)
+        detail_response = api_client.get(f"{base_url}/api/documents/{doc_id}", headers=auth_headers_owner)
+        assert detail_response.status_code == 200
+        
+        doc = detail_response.json()
         
         # Verify Phase 3 fields exist
-        assert "ai_provider_used" in doc
+        assert "ai_provider_used" in doc, f"ai_provider_used not in document keys: {list(doc.keys())}"
         assert "extraction_method" in doc
         assert "content_hash" in doc
         assert "version_number" in doc
@@ -250,7 +257,7 @@ class TestDocumentUploadPhase3:
         assert doc["content_hash"] is not None
         assert doc["version_number"] >= 1
         
-        print(f"✓ Phase 3 fields present in document:")
+        print(f"✓ Phase 3 fields present in document {doc_id}:")
         print(f"  - AI Provider: {doc['ai_provider_used']}")
         print(f"  - Extraction Method: {doc['extraction_method']}")
         print(f"  - Content Hash: {doc['content_hash'][:16]}...")
