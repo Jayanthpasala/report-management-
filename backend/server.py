@@ -393,6 +393,7 @@ async def get_document(doc_id: str, user=Depends(get_current_user)):
 
 @api_router.put("/documents/{doc_id}")
 async def update_document(doc_id: str, update: DocumentUpdate, user=Depends(get_current_user)):
+    """Update document with version history (immutable financial records)."""
     if user["role"] not in ["owner", "accounts"]:
         raise HTTPException(status_code=403, detail="Not authorized to update documents")
 
@@ -400,16 +401,36 @@ async def update_document(doc_id: str, update: DocumentUpdate, user=Depends(get_
     if not update_dict:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    # Get current document for version snapshot
+    current = await db.documents.find_one({"id": doc_id, "org_id": user["org_id"]}, {"_id": 0, "file_base64": 0})
+    if not current:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Create version snapshot (immutable record)
+    version_num = current.get("version_number", 1)
+    version_entry = {
+        "id": str(uuid.uuid4()),
+        "document_id": doc_id,
+        "org_id": user["org_id"],
+        "version": version_num,
+        "snapshot": {k: v for k, v in current.items() if k not in ["file_base64", "raw_ocr_text"]},
+        "changed_fields": list(update_dict.keys()),
+        "change_reason": update_dict.pop("change_reason", "Manual correction"),
+        "changed_by": user["id"],
+        "changed_by_name": user["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.document_versions.insert_one(version_entry)
+
+    # Update document
     if "status" in update_dict and update_dict["status"] == "processed":
         update_dict["requires_review"] = False
+    update_dict["version_number"] = version_num + 1
 
-    result = await db.documents.update_one(
+    await db.documents.update_one(
         {"id": doc_id, "org_id": user["org_id"]},
         {"$set": update_dict}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Document not found")
-
     updated = await db.documents.find_one({"id": doc_id}, {"_id": 0, "file_base64": 0})
     return updated
 
