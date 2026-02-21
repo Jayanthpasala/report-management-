@@ -192,6 +192,13 @@ function OwnerDashboard() {
           <Text style={s.actionCount}>{data.documents_processed}</Text>
           <Text style={s.actionLabel}>Documents</Text>
         </TouchableOpacity>
+        <TouchableOpacity testID="supplier-hub-btn" style={s.actionBtn} onPress={() => router.push('/supplier-hub')}>
+          <View style={[s.actionIcon, { backgroundColor: colors.status.info + '20' }]}>
+            <Ionicons name="people" size={22} color={colors.status.info} />
+          </View>
+          <Text style={s.actionCount}>Hub</Text>
+          <Text style={s.actionLabel}>Suppliers</Text>
+        </TouchableOpacity>
         <TouchableOpacity testID="generate-insights-btn" style={s.actionBtn} onPress={generateInsights}>
           <View style={[s.actionIcon, { backgroundColor: colors.brand.secondary + '20' }]}>
             <Ionicons name="sparkles" size={22} color={colors.brand.secondary} />
