@@ -220,8 +220,7 @@ const s = StyleSheet.create({
   cameraBtn: {
     width: 200, height: 200, borderRadius: radius.xl,
     backgroundColor: colors.brand.primary, alignItems: 'center', justifyContent: 'center',
-    shadowColor: colors.brand.primary, shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4, shadowRadius: 16, elevation: 8,
+    elevation: 8,
   },
   cameraBtnText: { fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold, color: colors.text.inverse, marginTop: spacing.sm },
   secondaryOptions: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.xxxl },
