@@ -507,34 +507,297 @@ async def get_supplier_documents(supplier_id: str, page: int = 1, limit: int = 2
     return {"documents": docs, "total": total, "page": page}
 
 
+# --- Supplier Validation Helpers ---
+def validate_indian_gst(gst_id: str) -> dict:
+    """Validate Indian GST number format and structure."""
+    import re
+    if not gst_id:
+        return {"valid": False, "error": "GST number required", "formatted": ""}
+    
+    gst_id = gst_id.strip().upper()
+    
+    # Indian GSTIN format: 2 digits state code + 10 char PAN + 1 entity code + Z + 1 check digit
+    # Example: 27AABCU9603R1ZM
+    pattern = r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[0-9A-Z]{1}Z[0-9A-Z]{1}$'
+    
+    if not re.match(pattern, gst_id):
+        return {"valid": False, "error": "Invalid GST format. Expected: 27AABCU9603R1ZM", "formatted": gst_id}
+    
+    state_code = int(gst_id[:2])
+    if state_code < 1 or state_code > 38:
+        return {"valid": False, "error": f"Invalid state code: {state_code}", "formatted": gst_id}
+    
+    return {"valid": True, "error": None, "formatted": gst_id, "state_code": state_code}
+
+
+def validate_international_tax_id(tax_id: str, country: str) -> dict:
+    """Validate tax ID for international countries."""
+    import re
+    if not tax_id:
+        return {"valid": True, "error": None, "formatted": ""}  # Optional for international
+    
+    tax_id = tax_id.strip().upper()
+    
+    # UAE TRN: 15 digits
+    if country.lower() in ["uae", "united arab emirates"]:
+        if re.match(r'^\d{15}$', tax_id):
+            return {"valid": True, "error": None, "formatted": tax_id}
+        return {"valid": False, "error": "UAE TRN must be 15 digits", "formatted": tax_id}
+    
+    # Singapore GST: 10 characters
+    if country.lower() in ["singapore", "sg"]:
+        if re.match(r'^[A-Z0-9]{10}$', tax_id):
+            return {"valid": True, "error": None, "formatted": tax_id}
+        return {"valid": False, "error": "Singapore GST must be 10 alphanumeric characters", "formatted": tax_id}
+    
+    # Generic: accept any non-empty string
+    return {"valid": True, "error": None, "formatted": tax_id}
+
+
+def fuzzy_name_match(name1: str, name2: str, threshold: float = 0.75) -> float:
+    """Simple fuzzy matching for supplier names."""
+    if not name1 or not name2:
+        return 0.0
+    
+    # Normalize
+    n1 = name1.lower().strip()
+    n2 = name2.lower().strip()
+    
+    if n1 == n2:
+        return 1.0
+    
+    # Simple word overlap matching
+    words1 = set(n1.split())
+    words2 = set(n2.split())
+    
+    if not words1 or not words2:
+        return 0.0
+    
+    intersection = words1 & words2
+    union = words1 | words2
+    
+    jaccard = len(intersection) / len(union)
+    return jaccard
+
+
 @api_router.post("/suppliers")
-async def create_supplier(name: str = Form(...), gst_id: str = Form(""), category: str = Form("General"), user=Depends(get_current_user)):
+async def create_supplier(
+    name: str = Form(...),
+    gst_id: str = Form(""),
+    category: str = Form("General"),
+    outlet_id: str = Form(None),
+    country: str = Form("India"),
+    user=Depends(get_current_user)
+):
+    """Create supplier with validation, duplicate detection, and fuzzy name warnings."""
     if user["role"] not in ["owner", "accounts"]:
         raise HTTPException(status_code=403, detail="Not authorized")
+    
+    name = name.strip()
+    if len(name) < 2:
+        raise HTTPException(status_code=400, detail="Supplier name must be at least 2 characters")
+    
+    # Validate GST/Tax ID based on country
+    validation_result = None
+    if country.lower() == "india":
+        if gst_id:
+            validation_result = validate_indian_gst(gst_id)
+            if not validation_result["valid"]:
+                raise HTTPException(status_code=400, detail=validation_result["error"])
+            gst_id = validation_result["formatted"]
+    else:
+        if gst_id:
+            validation_result = validate_international_tax_id(gst_id, country)
+            if not validation_result["valid"]:
+                raise HTTPException(status_code=400, detail=validation_result["error"])
+            gst_id = validation_result["formatted"]
+    
+    # Check for exact GST duplicate (if GST provided)
+    if gst_id:
+        existing_gst = await db.suppliers.find_one(
+            {"org_id": user["org_id"], "gst_id": gst_id},
+            {"_id": 0, "id": 1, "name": 1}
+        )
+        if existing_gst:
+            raise HTTPException(
+                status_code=400,
+                detail=f"GST/Tax ID already exists for supplier: {existing_gst['name']}"
+            )
+    
+    # Check for fuzzy name duplicates
+    existing_suppliers = await db.suppliers.find(
+        {"org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "name": 1, "gst_id": 1}
+    ).to_list(500)
+    
+    warnings = []
+    for s in existing_suppliers:
+        similarity = fuzzy_name_match(name, s["name"])
+        if similarity >= 0.75:
+            warnings.append({
+                "type": "similar_name",
+                "existing_id": s["id"],
+                "existing_name": s["name"],
+                "existing_gst": s.get("gst_id", ""),
+                "similarity": round(similarity * 100, 1),
+                "message": f"Similar to existing supplier: {s['name']} ({round(similarity * 100)}% match)"
+            })
+    
     supplier = {
         "id": str(uuid.uuid4()),
         "org_id": user["org_id"],
         "name": name,
         "gst_id": gst_id,
         "category": category,
-        "is_verified": False,
+        "country": country,
+        "outlet_id": outlet_id,  # Optional: for outlet-specific suppliers
+        "is_verified": bool(gst_id and validation_result and validation_result.get("valid")),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["id"],
     }
     await db.suppliers.insert_one(supplier)
     supplier.pop("_id", None)
-    return supplier
+    
+    return {
+        "supplier": supplier,
+        "warnings": warnings,
+        "validation": validation_result,
+    }
 
 
 @api_router.put("/suppliers/{supplier_id}")
-async def update_supplier(supplier_id: str, user=Depends(get_current_user)):
+async def update_supplier(
+    supplier_id: str,
+    name: str = Form(None),
+    gst_id: str = Form(None),
+    category: str = Form(None),
+    country: str = Form(None),
+    is_verified: bool = Form(None),
+    user=Depends(get_current_user)
+):
+    """Update supplier with validation."""
     if user["role"] not in ["owner", "accounts"]:
         raise HTTPException(status_code=403, detail="Not authorized")
-    # Read body manually for flexibility
-    import json as json_mod
-    from starlette.requests import Request
-    # Simple update - just pass the fields
-    return {"message": "Use POST with form data to update"}
+    
+    supplier = await db.suppliers.find_one(
+        {"id": supplier_id, "org_id": user["org_id"]}, {"_id": 0}
+    )
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    update_dict = {}
+    warnings = []
+    
+    if name is not None:
+        name = name.strip()
+        if len(name) < 2:
+            raise HTTPException(status_code=400, detail="Supplier name must be at least 2 characters")
+        update_dict["name"] = name
+        
+        # Check for fuzzy duplicates
+        existing_suppliers = await db.suppliers.find(
+            {"org_id": user["org_id"], "id": {"$ne": supplier_id}},
+            {"_id": 0, "id": 1, "name": 1}
+        ).to_list(500)
+        for s in existing_suppliers:
+            similarity = fuzzy_name_match(name, s["name"])
+            if similarity >= 0.75:
+                warnings.append({
+                    "type": "similar_name",
+                    "existing_name": s["name"],
+                    "similarity": round(similarity * 100, 1),
+                })
+    
+    if gst_id is not None:
+        current_country = country or supplier.get("country", "India")
+        if current_country.lower() == "india":
+            if gst_id:
+                validation = validate_indian_gst(gst_id)
+                if not validation["valid"]:
+                    raise HTTPException(status_code=400, detail=validation["error"])
+                gst_id = validation["formatted"]
+        else:
+            if gst_id:
+                validation = validate_international_tax_id(gst_id, current_country)
+                if not validation["valid"]:
+                    raise HTTPException(status_code=400, detail=validation["error"])
+                gst_id = validation["formatted"]
+        
+        # Check for duplicate GST
+        if gst_id:
+            existing_gst = await db.suppliers.find_one(
+                {"org_id": user["org_id"], "gst_id": gst_id, "id": {"$ne": supplier_id}},
+                {"_id": 0, "name": 1}
+            )
+            if existing_gst:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"GST/Tax ID already exists for: {existing_gst['name']}"
+                )
+        
+        update_dict["gst_id"] = gst_id
+    
+    if category is not None:
+        update_dict["category"] = category
+    if country is not None:
+        update_dict["country"] = country
+    if is_verified is not None:
+        update_dict["is_verified"] = is_verified
+    
+    if not update_dict:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.suppliers.update_one(
+        {"id": supplier_id, "org_id": user["org_id"]},
+        {"$set": update_dict}
+    )
+    
+    updated = await db.suppliers.find_one({"id": supplier_id}, {"_id": 0})
+    return {"supplier": updated, "warnings": warnings}
+
+
+@api_router.post("/suppliers/validate-gst")
+async def validate_gst_endpoint(gst_id: str = Form(...), country: str = Form("India"), user=Depends(get_current_user)):
+    """Validate a GST/Tax ID without creating a supplier."""
+    if country.lower() == "india":
+        result = validate_indian_gst(gst_id)
+    else:
+        result = validate_international_tax_id(gst_id, country)
+    
+    # Check for existing supplier with this GST
+    if result["formatted"]:
+        existing = await db.suppliers.find_one(
+            {"org_id": user["org_id"], "gst_id": result["formatted"]},
+            {"_id": 0, "id": 1, "name": 1}
+        )
+        if existing:
+            result["existing_supplier"] = existing
+    
+    return result
+
+
+@api_router.post("/suppliers/check-duplicate")
+async def check_supplier_duplicate(name: str = Form(...), user=Depends(get_current_user)):
+    """Check for potential duplicate suppliers by name."""
+    name = name.strip()
+    existing_suppliers = await db.suppliers.find(
+        {"org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "name": 1, "gst_id": 1, "category": 1}
+    ).to_list(500)
+    
+    matches = []
+    for s in existing_suppliers:
+        similarity = fuzzy_name_match(name, s["name"])
+        if similarity >= 0.5:  # Lower threshold for checking
+            matches.append({
+                **s,
+                "similarity": round(similarity * 100, 1),
+            })
+    
+    matches.sort(key=lambda x: x["similarity"], reverse=True)
+    return {"potential_duplicates": matches[:10]}
 
 
 # --- OUTLETS MANAGEMENT ---
