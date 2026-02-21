@@ -51,14 +51,21 @@ FinSight is a mobile-first AI-powered financial intelligence platform for multi-
 - [x] Document Vault bulk operations (approve, delete, flag review)
 - [x] Advanced Document Vault (currency badges, AI confidence %, long-press bulk select)
 
-### Phase 3 Features (Planned)
-- [ ] Real Google Document AI integration
-- [ ] Real Google Vision API fallback
-- [ ] Firebase Cloud Messaging (FCM) push notifications
-- [ ] Offline upload queue with background sync
-- [ ] Document version history
+### Phase 3 Features (Implemented)
+- [x] Pluggable Document Processor Adapter Pattern (GPT4oProcessor active, DocumentAI stub, MockProcessor)
+- [x] Real GPT-4o document analysis via Emergent LLM key (OCR + structured extraction from images)
+- [x] Offline Upload Queue (AsyncStorage persistence, exponential retry, duplicate protection via SHA256 content hash, network-aware sync)
+- [x] Immutable Document Version History (version_number, changed_fields, changed_by, soft replacement only)
+- [x] User Notification Preferences (5 toggles: missing reports, anomaly, low confidence, weekly summary, push)
+- [x] Enhanced Upload Screen (GPT-4o badge, queue status indicators, retry controls)
+- [x] Enhanced Document Detail (version badge, AI provider chip, version timeline, raw OCR text)
+- [x] Enhanced Settings (AI processor info, notification preference toggles)
+
+### Future Enhancements (Planned)
+- [ ] Real Google Document AI integration (stub ready)
+- [ ] Real Firebase Cloud Messaging (FCM) push delivery
 - [ ] BigQuery integration for advanced analytics
-- [ ] Predictive analytics
+- [ ] Predictive analytics / forecasting
 - [ ] Industry benchmarking comparison
 
 ### Critical Business Rule
