@@ -255,6 +255,7 @@ const s = StyleSheet.create({
   outletInfo: { flex: 1 },
   outletName: { fontSize: fonts.sizes.md, fontWeight: fonts.weights.medium, color: colors.text.primary },
   outletCity: { fontSize: fonts.sizes.xs, color: colors.text.muted, marginTop: 2 },
+  outletActions: { flexDirection: 'row', alignItems: 'center' },
 
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   statCard: {
