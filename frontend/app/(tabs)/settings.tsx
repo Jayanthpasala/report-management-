@@ -119,6 +119,52 @@ export default function SettingsScreen() {
           </View>
         )}
 
+        {/* AI Processor Info */}
+        {processorInfo && (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>AI Document Processing</Text>
+            <View style={s.infoCard}>
+              <View style={s.infoRow}>
+                <Ionicons name="sparkles" size={18} color={colors.brand.secondary} />
+                <Text style={s.infoText}>Active: {processorInfo.active_processor?.toUpperCase()}</Text>
+              </View>
+              <View style={s.infoRow}>
+                <Ionicons name={processorInfo.config?.has_api_key ? 'checkmark-circle' : 'alert-circle'} size={18} color={processorInfo.config?.has_api_key ? colors.brand.primary : colors.status.error} />
+                <Text style={s.infoText}>API Key: {processorInfo.config?.has_api_key ? 'Configured' : 'Missing'}</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Notification Preferences */}
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Notification Preferences</Text>
+          {[
+            { key: 'missing_reports', label: 'Missing Report Alerts', icon: 'document-outline' },
+            { key: 'anomaly_alerts', label: 'Anomaly Alerts', icon: 'alert-circle-outline' },
+            { key: 'low_confidence', label: 'Low Confidence Alerts', icon: 'eye-off-outline' },
+            { key: 'weekly_summary', label: 'Weekly Summary', icon: 'bar-chart-outline' },
+            { key: 'push_enabled', label: 'Push Notifications', icon: 'notifications-outline' },
+          ].map(pref => (
+            <TouchableOpacity
+              key={pref.key}
+              testID={`pref-${pref.key}`}
+              style={s.prefRow}
+              onPress={async () => {
+                const updated = { ...notifPrefs, [pref.key]: !notifPrefs[pref.key] };
+                setNotifPrefs(updated);
+                try { await api.updateNotificationPrefs(updated); } catch {}
+              }}
+            >
+              <Ionicons name={pref.icon as any} size={20} color={colors.text.secondary} />
+              <Text style={s.prefLabel}>{pref.label}</Text>
+              <View style={[s.toggle, notifPrefs[pref.key] && s.toggleOn]}>
+                <View style={[s.toggleDot, notifPrefs[pref.key] && s.toggleDotOn]} />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {/* Actions */}
         <View style={s.section}>
           {user?.role === 'owner' && (
