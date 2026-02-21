@@ -148,4 +148,21 @@ export const api = {
 
   // Phase 3: Processor Info
   getProcessorInfo: () => request('/processor/info'),
+
+  // Phase 4: Supplier Hub
+  getSupplier: (id: string) => request(`/suppliers/${id}`),
+  getSupplierDocuments: (id: string, page?: number) =>
+    request(`/suppliers/${id}/documents${page ? `?page=${page}` : ''}`),
+  createSupplier: (data: { name: string; gst_id?: string; category?: string }) => {
+    const formData = new FormData();
+    formData.append('name', data.name);
+    if (data.gst_id) formData.append('gst_id', data.gst_id);
+    if (data.category) formData.append('category', data.category);
+    return request('/suppliers', { method: 'POST', body: formData });
+  },
+
+  // Phase 4: Outlet Config
+  getOutlet: (id: string) => request(`/outlets/${id}`),
+  updateOutlet: (id: string, data: any) =>
+    request(`/outlets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 };
