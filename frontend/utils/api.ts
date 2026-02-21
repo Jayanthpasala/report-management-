@@ -140,4 +140,12 @@ export const api = {
 
   // Phase 2: Document versions
   getDocumentVersions: (id: string) => request(`/documents/${id}/versions`),
+
+  // Phase 3: Notification Preferences
+  getNotificationPrefs: () => request('/notifications/preferences'),
+  updateNotificationPrefs: (prefs: Record<string, boolean>) =>
+    request('/notifications/preferences', { method: 'PUT', body: JSON.stringify(prefs) }),
+
+  // Phase 3: Processor Info
+  getProcessorInfo: () => request('/processor/info'),
 };
