@@ -121,6 +121,9 @@ backend:
       - working: true
         agent: "main"
         comment: "Implemented full outlet config endpoint with country mode, timezone, currency, GST settings, required reports, business hours, and stats"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Returns complete config with all required fields (country_mode, timezone, currency, gst_enabled, gst_rate, required_daily_reports, business_hours, stats). Stats include total_documents, needs_review, active_suppliers, monthly_spend. Available currencies and timezones arrays present."
 
   - task: "Outlet Configuration API - PUT /api/outlets/{id}/config"
     implemented: true
@@ -133,6 +136,9 @@ backend:
       - working: true
         agent: "main"
         comment: "Implemented update endpoint with country mode auto-configuration for India vs international"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Country mode switching works perfectly. Changing from 'india' to 'international' auto-applies UAE defaults (AED currency, Asia/Dubai timezone). Auto-revert to India mode also working."
 
   - task: "Supplier Detail API - GET /api/suppliers/{id}"
     implemented: true
@@ -145,6 +151,9 @@ backend:
       - working: true
         agent: "main"
         comment: "Returns supplier profile with total_spend, document_count, avg_invoice, monthly_trend"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Returns complete supplier profile with all required metrics. Monthly trend includes proper structure with month, spend, count fields. All spend calculations working correctly."
 
   - task: "GST Validation API - POST /api/suppliers/validate-gst"
     implemented: true
@@ -157,6 +166,9 @@ backend:
       - working: true
         agent: "main"
         comment: "Validates Indian GST format (27AABCU9603R1ZM), UAE TRN, Singapore GST. Returns existing_supplier if duplicate found"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GST validation working perfectly. Validates Indian format with state codes 01-38, rejects invalid formats, detects existing suppliers. User-friendly lowercase auto-formatting to uppercase. UAE TRN and Singapore GST validation also working."
 
   - task: "Supplier Duplicate Check API - POST /api/suppliers/check-duplicate"
     implemented: true
@@ -169,6 +181,9 @@ backend:
       - working: true
         agent: "main"
         comment: "Fuzzy name matching with Jaccard similarity. Returns potential duplicates with similarity percentage"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Fuzzy matching working excellently. Found 'Metro Cash & Carry' with 75% similarity for 'Metro Cash Carry'. Jaccard algorithm with proper similarity percentages. Case-insensitive matching working."
 
   - task: "Enhanced Supplier Create/Update APIs"
     implemented: true
@@ -181,6 +196,9 @@ backend:
       - working: true
         agent: "main"
         comment: "POST/PUT /api/suppliers now includes GST validation, duplicate detection warnings, category management"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Both CREATE and UPDATE APIs working perfectly. GST validation integrated, duplicate warnings returned, proper response structure with supplier/warnings/validation fields. Organization isolation working correctly."
 
 frontend:
   - task: "Outlet Configuration Screen"
