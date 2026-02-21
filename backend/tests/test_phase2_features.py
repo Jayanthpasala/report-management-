@@ -372,18 +372,17 @@ class TestBulkDocumentActions:
         doc_ids = [d["id"] for d in docs[:2]]
         print(f"Approving {len(doc_ids)} documents")
         
-        # Prepare form data - need to remove Content-Type header for multipart
+        # Prepare form data - use requests.post directly to avoid session Content-Type
         import json
+        import requests
         form_data = {
             'action': 'approve',
             'document_ids': json.dumps(doc_ids)
         }
         
-        # Create new session without Content-Type header for form data
-        headers_no_content_type = {"Authorization": auth_headers_owner["Authorization"]}
-        response = api_client.post(
+        response = requests.post(
             f"{base_url}/api/documents/bulk-action",
-            headers=headers_no_content_type,
+            headers={"Authorization": auth_headers_owner["Authorization"]},
             data=form_data
         )
         print(f"Status: {response.status_code}")
@@ -415,15 +414,15 @@ class TestBulkDocumentActions:
         print(f"Flagging {len(doc_ids)} documents for review")
         
         import json
+        import requests
         form_data = {
             'action': 'flag_review',
             'document_ids': json.dumps(doc_ids)
         }
         
-        headers_no_content_type = {"Authorization": auth_headers_owner["Authorization"]}
-        response = api_client.post(
+        response = requests.post(
             f"{base_url}/api/documents/bulk-action",
-            headers=headers_no_content_type,
+            headers={"Authorization": auth_headers_owner["Authorization"]},
             data=form_data
         )
         print(f"Status: {response.status_code}")
@@ -436,15 +435,15 @@ class TestBulkDocumentActions:
     def test_bulk_action_staff_forbidden(self, api_client, base_url, auth_headers_staff):
         print("\n=== Testing Bulk Actions (Staff - Should Fail) ===")
         import json
+        import requests
         form_data = {
             'action': 'approve',
             'document_ids': json.dumps(["test-id"])
         }
         
-        headers_no_content_type = {"Authorization": auth_headers_staff["Authorization"]}
-        response = api_client.post(
+        response = requests.post(
             f"{base_url}/api/documents/bulk-action",
-            headers=headers_no_content_type,
+            headers={"Authorization": auth_headers_staff["Authorization"]},
             data=form_data
         )
         print(f"Status: {response.status_code}")
