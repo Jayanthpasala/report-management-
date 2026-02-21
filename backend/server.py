@@ -602,6 +602,7 @@ async def get_stats(user=Depends(get_current_user)):
     outlet_count = await db.outlets.count_documents({"org_id": org_id})
     supplier_count = await db.suppliers.count_documents({"org_id": org_id})
     user_count = await db.users.count_documents({"org_id": org_id})
+    notif_count = await db.notifications.count_documents({"org_id": org_id, "is_read": False})
 
     return {
         "total_documents": total_docs,
@@ -609,13 +610,257 @@ async def get_stats(user=Depends(get_current_user)):
         "outlets": outlet_count,
         "suppliers": supplier_count,
         "users": user_count,
+        "unread_notifications": notif_count,
     }
+
+
+# =============================================
+# PHASE 2: MULTI-CURRENCY ENGINE
+# =============================================
+
+@api_router.post("/currency/sync")
+async def sync_exchange_rates(user=Depends(get_current_user)):
+    """Manually trigger exchange rate sync (simulates Cloud Scheduler)."""
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    result = await sync_daily_rates(db)
+    return {"message": "Exchange rates synced", "snapshot": result}
+
+@api_router.get("/currency/rates")
+async def get_current_rates(user=Depends(get_current_user)):
+    """Get current exchange rates."""
+    rates = await fetch_live_rates("USD")
+    return rates
+
+@api_router.get("/currency/rates/{date_str}")
+async def get_historical_rate(date_str: str, currency: str = "USD", user=Depends(get_current_user)):
+    """Get exchange rate for a specific date (document_date based)."""
+    rate_info = await get_rate_for_date(db, currency, date_str)
+    return rate_info
+
+@api_router.get("/currency/history")
+async def get_rate_history(days: int = 30, user=Depends(get_current_user)):
+    """Get historical rate snapshots."""
+    date_from = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    snapshots = await db.exchange_rates.find(
+        {"date": {"$gte": date_from}}, {"_id": 0}
+    ).sort("date", -1).to_list(days)
+    return {"snapshots": snapshots, "count": len(snapshots)}
+
+@api_router.post("/currency/convert")
+async def convert_currency(
+    amount: float = Query(...), currency: str = Query(...),
+    date_str: str = Query(...), user=Depends(get_current_user)
+):
+    """Convert an amount to INR using document_date rate."""
+    result = await convert_to_inr(db, amount, currency, date_str)
+    return result
+
+
+# =============================================
+# PHASE 2: INTELLIGENCE ENGINE
+# =============================================
+
+@api_router.get("/insights")
+async def list_insights(days: int = 7, severity: str = None, user=Depends(get_current_user)):
+    """Get AI-generated insight cards."""
+    if user["role"] not in ["owner"]:
+        raise HTTPException(status_code=403, detail="Owner access required")
+    insights = await get_insights(db, user["org_id"], days, severity)
+    return {"insights": insights, "count": len(insights)}
+
+@api_router.post("/insights/generate")
+async def generate_insights(date_str: str = None, user=Depends(get_current_user)):
+    """Manually trigger intelligence engine (simulates Cloud Scheduler)."""
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    result = await run_daily_intelligence(db, user["org_id"])
+    return {"message": "Intelligence pipeline complete", **result}
+
+@api_router.put("/insights/{insight_id}/read")
+async def mark_insight_read(insight_id: str, user=Depends(get_current_user)):
+    """Mark an insight card as read."""
+    await db.insights.update_one(
+        {"id": insight_id, "org_id": user["org_id"]},
+        {"$set": {"is_read": True}}
+    )
+    return {"message": "Marked as read"}
+
+
+# =============================================
+# PHASE 2: NOTIFICATIONS
+# =============================================
+
+@api_router.get("/notifications")
+async def list_notifications(
+    unread_only: bool = False, limit: int = 50,
+    user=Depends(get_current_user)
+):
+    """Get notifications for current user."""
+    query = {"org_id": user["org_id"]}
+    # Filter by role scope
+    if user["role"] not in ["owner"]:
+        query["$or"] = [
+            {"user_role": user["role"]},
+            {"user_role": "all"},
+            {"user_id": user["id"]},
+        ]
+    if unread_only:
+        query["is_read"] = False
+    notifications = await db.notifications.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    unread_count = await db.notifications.count_documents({**query, "is_read": False})
+    return {"notifications": notifications, "unread_count": unread_count}
+
+@api_router.put("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, user=Depends(get_current_user)):
+    """Mark a notification as read."""
+    await db.notifications.update_one(
+        {"id": notif_id, "org_id": user["org_id"]},
+        {"$set": {"is_read": True}}
+    )
+    return {"message": "Marked as read"}
+
+@api_router.put("/notifications/read-all")
+async def mark_all_read(user=Depends(get_current_user)):
+    """Mark all notifications as read."""
+    await db.notifications.update_many(
+        {"org_id": user["org_id"], "is_read": False},
+        {"$set": {"is_read": True}}
+    )
+    return {"message": "All notifications marked as read"}
+
+@api_router.post("/notifications/trigger-check")
+async def trigger_notification_check(user=Depends(get_current_user)):
+    """Trigger missing report check (simulates Cloud Scheduler)."""
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    org_id = user["org_id"]
+    outlets = await db.outlets.find({"org_id": org_id}, {"_id": 0}).to_list(100)
+    org = await db.organizations.find_one({"id": org_id}, {"_id": 0})
+    required_types = (org or {}).get("settings", {}).get("required_daily_reports", ["sales_receipt", "purchase_invoice"])
+
+    notifications_created = 0
+    for outlet in outlets:
+        docs = await db.documents.find(
+            {"outlet_id": outlet["id"], "document_date": today},
+            {"_id": 0, "document_type": 1}
+        ).to_list(100)
+        types_present = set(d.get("document_type") for d in docs)
+        missing = set(required_types) - types_present
+
+        if missing:
+            notif = {
+                "id": str(uuid.uuid4()),
+                "org_id": org_id,
+                "user_role": "owner",
+                "type": "missing_report",
+                "title": f"Missing reports: {outlet['name']}",
+                "body": f"Missing {', '.join(missing)} for {today}",
+                "severity": "warning",
+                "color": "#fbbf24",
+                "related_id": outlet["id"],
+                "related_type": "outlet",
+                "is_read": False,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.notifications.insert_one(notif)
+            notifications_created += 1
+
+    return {"message": f"Check complete. {notifications_created} notifications created."}
+
+
+# =============================================
+# PHASE 2: EXPORT / CA REPORTS
+# =============================================
+
+@api_router.get("/export/{report_type}")
+async def export_report(
+    report_type: str,
+    format: str = Query("xlsx", regex="^(xlsx|csv)$"),
+    outlet_id: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    user=Depends(get_current_user)
+):
+    """Export financial reports. Types: pnl, expense_ledger, gst_summary, multi_currency."""
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Owner or accounts access required")
+
+    if report_type not in ["pnl", "expense_ledger", "gst_summary", "multi_currency"]:
+        raise HTTPException(status_code=400, detail="Invalid report type")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+
+    if format == "csv":
+        content = await generate_csv_report(db, user["org_id"], report_type, outlet_id, date_from, date_to)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={report_type}_{timestamp}.csv"}
+        )
+    else:
+        content = await generate_excel_report(db, user["org_id"], report_type, outlet_id, date_from, date_to)
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={report_type}_{timestamp}.xlsx"}
+        )
+
+
+# =============================================
+# PHASE 2: DOCUMENT VAULT ENHANCEMENTS
+# =============================================
+
+@api_router.post("/documents/bulk-action")
+async def bulk_document_action(
+    action: str = Form(...),
+    document_ids: str = Form(...),
+    user=Depends(get_current_user)
+):
+    """Bulk operations on documents: approve, delete, re-process."""
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    ids = json.loads(document_ids)
+    if not ids:
+        raise HTTPException(status_code=400, detail="No document IDs provided")
+
+    if action == "approve":
+        result = await db.documents.update_many(
+            {"id": {"$in": ids}, "org_id": user["org_id"]},
+            {"$set": {"status": "processed", "requires_review": False}}
+        )
+        return {"message": f"Approved {result.modified_count} documents"}
+    elif action == "delete":
+        result = await db.documents.delete_many(
+            {"id": {"$in": ids}, "org_id": user["org_id"]}
+        )
+        return {"message": f"Deleted {result.deleted_count} documents"}
+    elif action == "flag_review":
+        result = await db.documents.update_many(
+            {"id": {"$in": ids}, "org_id": user["org_id"]},
+            {"$set": {"status": "needs_review", "requires_review": True}}
+        )
+        return {"message": f"Flagged {result.modified_count} documents for review"}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action. Use: approve, delete, flag_review")
+
+@api_router.get("/documents/{doc_id}/versions")
+async def get_document_versions(doc_id: str, user=Depends(get_current_user)):
+    """Get version history for a document."""
+    versions = await db.document_versions.find(
+        {"document_id": doc_id, "org_id": user["org_id"]},
+        {"_id": 0}
+    ).sort("version", -1).to_list(50)
+    return {"versions": versions}
 
 
 # --- Health ---
 @api_router.get("/")
 async def root():
-    return {"message": "Financial Intelligence Platform API", "version": "1.0.0"}
+    return {"message": "Financial Intelligence Platform API", "version": "2.0.0"}
 
 
 app.include_router(api_router)
