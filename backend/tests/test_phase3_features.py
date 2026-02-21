@@ -325,12 +325,12 @@ class TestDocumentUploadPhase3:
         
         # Upload same content to same outlet (should be duplicate)
         # Note: Hash is computed on server, so we need to upload same exact bytes
-        files2 = {'file': ('duplicate_test.jpg', test_content, 'image/jpeg')}
+        files2 = {'file': ('duplicate_test.jpg', io.BytesIO(test_content), 'image/jpeg')}
         data2 = {'outlet_id': outlet_id, 'file_hash': first_hash}  # Pass hash for duplicate detection
         
         response2 = api_client.post(
             f"{base_url}/api/documents/upload",
-            headers={'Authorization': auth_headers_owner['Authorization']},
+            headers=upload_headers,
             files=files2,
             data=data2
         )
