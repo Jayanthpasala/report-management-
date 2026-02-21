@@ -235,18 +235,22 @@ class TestDocumentUploadPhase3:
         print(f"Testing upload to outlet: {outlet_id}")
         
         # Create a test file (simulated)
+        import io
         test_file_content = b"TEST_PHASE3_INVOICE_CONTENT"
-        files = {'file': ('test_phase3_invoice.jpg', test_file_content, 'image/jpeg')}
+        files = {'file': ('test_phase3_invoice.jpg', io.BytesIO(test_file_content), 'image/jpeg')}
         data = {'outlet_id': outlet_id}
         
-        # Upload
+        # Upload (multipart form data requires removing Content-Type header)
+        upload_headers = {'Authorization': auth_headers_owner['Authorization']}
         response = api_client.post(
             f"{base_url}/api/documents/upload",
-            headers={'Authorization': auth_headers_owner['Authorization']},
+            headers=upload_headers,
             files=files,
             data=data
         )
         print(f"Upload status: {response.status_code}")
+        if response.status_code != 200:
+            print(f"Upload error: {response.text}")
         assert response.status_code == 200
         
         result = response.json()
