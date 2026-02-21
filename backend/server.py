@@ -831,6 +831,52 @@ async def trigger_notification_check(user=Depends(get_current_user)):
     return {"message": f"Check complete. {notifications_created} notifications created."}
 
 
+# --- Notification Preferences ---
+@api_router.get("/notifications/preferences")
+async def get_notification_prefs(user=Depends(get_current_user)):
+    """Get user notification preferences."""
+    prefs = await db.notification_preferences.find_one(
+        {"user_id": user["id"]}, {"_id": 0}
+    )
+    if not prefs:
+        prefs = {
+            "user_id": user["id"],
+            "missing_reports": True,
+            "anomaly_alerts": True,
+            "low_confidence": True,
+            "weekly_summary": True,
+            "push_enabled": True,
+        }
+    return prefs
+
+@api_router.put("/notifications/preferences")
+async def update_notification_prefs(prefs: dict, user=Depends(get_current_user)):
+    """Update user notification preferences."""
+    allowed = {"missing_reports", "anomaly_alerts", "low_confidence", "weekly_summary", "push_enabled"}
+    update_dict = {k: v for k, v in prefs.items() if k in allowed}
+    update_dict["user_id"] = user["id"]
+    await db.notification_preferences.update_one(
+        {"user_id": user["id"]},
+        {"$set": update_dict},
+        upsert=True
+    )
+    return {"message": "Preferences updated"}
+
+# --- Document Processor Info ---
+@api_router.get("/processor/info")
+async def get_processor_info(user=Depends(get_current_user)):
+    """Get current document processor configuration."""
+    processor = get_processor()
+    return {
+        "active_processor": processor.name(),
+        "available_processors": ["gpt4o", "document_ai", "mock"],
+        "config": {
+            "has_api_key": bool(os.environ.get("EMERGENT_LLM_KEY")),
+            "processor_env": os.environ.get("DOCUMENT_PROCESSOR", "gpt4o"),
+        }
+    }
+
+
 # =============================================
 # PHASE 2: EXPORT / CA REPORTS
 # =============================================
