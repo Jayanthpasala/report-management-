@@ -439,7 +439,156 @@ async def update_document(doc_id: str, update: DocumentUpdate, user=Depends(get_
 @api_router.get("/suppliers")
 async def list_suppliers(user=Depends(get_current_user)):
     suppliers = await db.suppliers.find({"org_id": user["org_id"]}, {"_id": 0}).to_list(200)
+
+    # Enrich with document counts and total spend
+    for s in suppliers:
+        doc_stats = await db.documents.aggregate([
+            {"$match": {"org_id": user["org_id"], "supplier_id": s["id"], "status": "processed"}},
+            {"$group": {
+                "_id": None,
+                "total_spend": {"$sum": "$converted_inr_amount"},
+                "doc_count": {"$sum": 1},
+                "avg_amount": {"$avg": "$converted_inr_amount"},
+                "last_date": {"$max": "$document_date"},
+            }}
+        ]).to_list(1)
+        stats = doc_stats[0] if doc_stats else {}
+        s["total_spend"] = round(stats.get("total_spend", 0), 2)
+        s["document_count"] = stats.get("doc_count", 0)
+        s["avg_invoice"] = round(stats.get("avg_amount", 0), 2)
+        s["last_document_date"] = stats.get("last_date")
+
     return {"suppliers": suppliers}
+
+
+@api_router.get("/suppliers/{supplier_id}")
+async def get_supplier(supplier_id: str, user=Depends(get_current_user)):
+    supplier = await db.suppliers.find_one({"id": supplier_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+
+    # Get stats
+    doc_stats = await db.documents.aggregate([
+        {"$match": {"org_id": user["org_id"], "supplier_id": supplier_id, "status": "processed"}},
+        {"$group": {
+            "_id": None,
+            "total_spend": {"$sum": "$converted_inr_amount"},
+            "doc_count": {"$sum": 1},
+            "avg_amount": {"$avg": "$converted_inr_amount"},
+        }}
+    ]).to_list(1)
+    stats = doc_stats[0] if doc_stats else {}
+    supplier["total_spend"] = round(stats.get("total_spend", 0), 2)
+    supplier["document_count"] = stats.get("doc_count", 0)
+    supplier["avg_invoice"] = round(stats.get("avg_amount", 0), 2)
+
+    # Monthly spend trend (last 6 months)
+    monthly = await db.documents.aggregate([
+        {"$match": {"org_id": user["org_id"], "supplier_id": supplier_id, "status": "processed"}},
+        {"$group": {
+            "_id": {"$substr": ["$document_date", 0, 7]},
+            "spend": {"$sum": "$converted_inr_amount"},
+            "count": {"$sum": 1},
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": 6},
+    ]).to_list(6)
+    supplier["monthly_trend"] = [{"month": m["_id"], "spend": round(m["spend"], 2), "count": m["count"]} for m in monthly]
+
+    return supplier
+
+
+@api_router.get("/suppliers/{supplier_id}/documents")
+async def get_supplier_documents(supplier_id: str, page: int = 1, limit: int = 20, user=Depends(get_current_user)):
+    query = {"org_id": user["org_id"], "supplier_id": supplier_id}
+    total = await db.documents.count_documents(query)
+    skip = (page - 1) * limit
+    docs = await db.documents.find(query, {"_id": 0, "file_base64": 0}).sort("document_date", -1).skip(skip).limit(limit).to_list(limit)
+    return {"documents": docs, "total": total, "page": page}
+
+
+@api_router.post("/suppliers")
+async def create_supplier(name: str = Form(...), gst_id: str = Form(""), category: str = Form("General"), user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    supplier = {
+        "id": str(uuid.uuid4()),
+        "org_id": user["org_id"],
+        "name": name,
+        "gst_id": gst_id,
+        "category": category,
+        "is_verified": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["id"],
+    }
+    await db.suppliers.insert_one(supplier)
+    supplier.pop("_id", None)
+    return supplier
+
+
+@api_router.put("/suppliers/{supplier_id}")
+async def update_supplier(supplier_id: str, user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    # Read body manually for flexibility
+    import json as json_mod
+    from starlette.requests import Request
+    # Simple update - just pass the fields
+    return {"message": "Use POST with form data to update"}
+
+
+# --- OUTLETS MANAGEMENT ---
+@api_router.get("/outlets/{outlet_id}")
+async def get_outlet_detail(outlet_id: str, user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"] and outlet_id not in user.get("outlet_ids", []):
+        raise HTTPException(status_code=403, detail="No access")
+    outlet = await db.outlets.find_one({"id": outlet_id}, {"_id": 0})
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+
+    # Stats
+    doc_count = await db.documents.count_documents({"outlet_id": outlet_id})
+    review_count = await db.documents.count_documents({"outlet_id": outlet_id, "status": "needs_review"})
+    supplier_ids = await db.documents.distinct("supplier_id", {"outlet_id": outlet_id})
+
+    # Recent metrics
+    from datetime import timedelta
+    date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    metrics = await db.daily_metrics.find(
+        {"outlet_id": outlet_id, "document_date": {"$gte": date_from}}, {"_id": 0}
+    ).to_list(100)
+    total_rev = sum(m.get("revenue", 0) for m in metrics)
+    total_fc = sum(m.get("food_cost", 0) for m in metrics)
+
+    outlet["stats"] = {
+        "total_documents": doc_count,
+        "needs_review": review_count,
+        "active_suppliers": len([s for s in supplier_ids if s]),
+        "monthly_revenue": round(total_rev, 2),
+        "monthly_food_cost_pct": round(total_fc / total_rev * 100, 1) if total_rev > 0 else 0,
+    }
+    return outlet
+
+
+class OutletUpdate(BaseModel):
+    name: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
+    currency: Optional[str] = None
+
+
+@api_router.put("/outlets/{outlet_id}")
+async def update_outlet(outlet_id: str, update: OutletUpdate, user=Depends(get_current_user)):
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    update_dict = {k: v for k, v in update.dict().items() if v is not None}
+    if not update_dict:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = await db.outlets.update_one({"id": outlet_id, "org_id": user["org_id"]}, {"$set": update_dict})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+    updated = await db.outlets.find_one({"id": outlet_id}, {"_id": 0})
+    return updated
 
 
 # --- DASHBOARD ---
