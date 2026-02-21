@@ -43,17 +43,23 @@ FinSight is a mobile-first AI-powered financial intelligence platform for multi-
 - [x] Profile/settings with org & outlet info
 - [x] Dark theme "Tactical Finance" design system
 
-### Phase 2 Features (Planned)
-- [ ] Advanced intelligence engine with anomaly detection
-- [ ] Industry benchmarking
-- [ ] Predictive analytics
-- [ ] Multi-currency exchange rates (live API)
-- [ ] Firebase Cloud Messaging push notifications
-- [ ] Offline upload queue
+### Phase 2 Features (Implemented)
+- [x] Multi-Currency Engine with live ExchangeRate-API (10 currencies, historical snapshots, document_date-based rates)
+- [x] Owner Intelligence Engine (KPI computation, benchmark comparison, anomaly detection, color-coded insight cards)
+- [x] In-app Notification Center (missing reports, anomaly alerts, read/unread, mark all read)
+- [x] Export / CA Reports (P&L, Expense Ledger, GST Summary India, Multi-Currency — Excel and CSV)
+- [x] Document Vault bulk operations (approve, delete, flag review)
+- [x] Advanced Document Vault (currency badges, AI confidence %, long-press bulk select)
+
+### Phase 3 Features (Planned)
 - [ ] Real Google Document AI integration
 - [ ] Real Google Vision API fallback
+- [ ] Firebase Cloud Messaging (FCM) push notifications
+- [ ] Offline upload queue with background sync
+- [ ] Document version history
 - [ ] BigQuery integration for advanced analytics
-- [ ] Export CA reports
+- [ ] Predictive analytics
+- [ ] Industry benchmarking comparison
 
 ### Critical Business Rule
 All financial reporting, analytics, calendar compliance, and storage grouping MUST be based on `document_date` (business date extracted from document), NOT `upload_date` or `processing_date`.
