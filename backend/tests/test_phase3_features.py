@@ -300,17 +300,21 @@ class TestDocumentUploadPhase3:
         outlet_id = outlets[0]["id"]
         
         # Upload first document
+        import io
         test_content = b"DUPLICATE_TEST_CONTENT_UNIQUE_12345"
-        files1 = {'file': ('duplicate_test.jpg', test_content, 'image/jpeg')}
+        files1 = {'file': ('duplicate_test.jpg', io.BytesIO(test_content), 'image/jpeg')}
         data1 = {'outlet_id': outlet_id}
         
+        upload_headers = {'Authorization': auth_headers_owner['Authorization']}
         response1 = api_client.post(
             f"{base_url}/api/documents/upload",
-            headers={'Authorization': auth_headers_owner['Authorization']},
+            headers=upload_headers,
             files=files1,
             data=data1
         )
         print(f"First upload status: {response1.status_code}")
+        if response1.status_code != 200:
+            print(f"Upload error: {response1.text}")
         assert response1.status_code == 200
         
         result1 = response1.json()
