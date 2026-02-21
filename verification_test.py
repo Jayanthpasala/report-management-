@@ -171,7 +171,7 @@ class AdditionalVerificationTests:
             ("AABCU9603R1ZM", False, "Missing state code"),
             ("27AABCU9603R1Z", False, "Too short"),
             ("27AABCU9603R1ZMX", False, "Too long"),
-            ("27aabcu9603r1zm", False, "Lowercase letters"),
+            ("27aabcu9603r1zm", True, "Lowercase letters (auto-formatted to uppercase)"),
         ]
         
         try:
