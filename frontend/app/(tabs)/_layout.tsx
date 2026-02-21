@@ -3,6 +3,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { colors } from '../../utils/theme';
 
+function DashboardIcon({ color, size }: { color: string; size: number }) {
+  return <Ionicons name="grid" size={size} color={color} />;
+}
+function UploadIcon({ color, size }: { color: string; size: number }) {
+  return <Ionicons name="camera" size={size + 4} color={color} />;
+}
+function VaultIcon({ color, size }: { color: string; size: number }) {
+  return <Ionicons name="folder-open" size={size} color={color} />;
+}
+function ReviewIcon({ color, size }: { color: string; size: number }) {
+  return <Ionicons name="checkmark-circle" size={size} color={color} />;
+}
+function ProfileIcon({ color, size }: { color: string; size: number }) {
+  return <Ionicons name="person" size={size} color={color} />;
+}
+
 export default function TabsLayout() {
   const { user } = useAuth();
   const role = user?.role || 'staff';
@@ -28,28 +44,21 @@ export default function TabsLayout() {
         name="dashboard"
         options={{
           title: role === 'staff' ? 'Home' : 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="grid" size={size} color={color} />
-          ),
+          tabBarIcon: DashboardIcon,
         }}
       />
       <Tabs.Screen
         name="upload"
         options={{
           title: 'Upload',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="camera" size={size + 4} color={color} />
-          ),
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+          tabBarIcon: UploadIcon,
         }}
       />
       <Tabs.Screen
         name="documents"
         options={{
           title: 'Vault',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="folder-open" size={size} color={color} />
-          ),
+          tabBarIcon: VaultIcon,
           href: role === 'staff' ? null : undefined,
         }}
       />
@@ -57,9 +66,7 @@ export default function TabsLayout() {
         name="review"
         options={{
           title: 'Review',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="checkmark-circle" size={size} color={color} />
-          ),
+          tabBarIcon: ReviewIcon,
           href: (role === 'owner' || role === 'accounts') ? undefined : null,
         }}
       />
@@ -67,9 +74,7 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
-          ),
+          tabBarIcon: ProfileIcon,
         }}
       />
     </Tabs>
