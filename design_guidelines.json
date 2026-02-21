@@ -1,0 +1,164 @@
+{
+  "brand_identity": {
+    "name": "Tactical Finance",
+    "theme": "dark",
+    "core_values": ["Trust", "Speed", "Clarity"],
+    "archetype": "The Performance Pro (Adapted for Finance)",
+    "visual_style": "High-contrast dark mode with neon accents for data visibility in low-light environments (kitchens/back-offices)."
+  },
+  "colors": {
+    "palette": {
+      "background": {
+        "default": "#09090b",
+        "surface": "#18181b",
+        "overlay": "#27272a"
+      },
+      "text": {
+        "primary": "#f8fafc",
+        "secondary": "#94a3b8",
+        "muted": "#64748b",
+        "inverse": "#09090b"
+      },
+      "brand": {
+        "primary": "#10b981",
+        "secondary": "#7c3aed",
+        "accent": "#f43f5e"
+      },
+      "status": {
+        "success": "#10b981",
+        "warning": "#fbbf24",
+        "error": "#f43f5e",
+        "info": "#3b82f6"
+      }
+    },
+    "gradients": {
+      "brand_glow": "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+      "ai_pulse": "linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "headings": "SpaceGrotesk_700Bold",
+      "body": "Manrope_400Regular",
+      "data": "JetBrainsMono_500Medium"
+    },
+    "scale": {
+      "h1": "text-4xl font-bold tracking-tight",
+      "h2": "text-3xl font-bold tracking-tight",
+      "h3": "text-2xl font-semibold",
+      "h4": "text-xl font-semibold",
+      "body_lg": "text-lg leading-relaxed",
+      "body_base": "text-base leading-relaxed",
+      "caption": "text-sm text-muted-foreground",
+      "tiny": "text-xs tracking-wider uppercase"
+    },
+    "rules": "Use tabular figures (monospaced numbers) for all financial data. Never use Inter for headings."
+  },
+  "layout": {
+    "spacing": {
+      "container_padding": "p-4 md:p-6 lg:p-8",
+      "section_gap": "gap-6",
+      "item_gap": "gap-3"
+    },
+    "grids": {
+      "bento_dashboard": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4",
+      "form_layout": "flex flex-col gap-4 max-w-md mx-auto"
+    },
+    "z_index": {
+      "toast": 100,
+      "modal": 50,
+      "dropdown": 40,
+      "sticky_nav": 30
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "h-12 px-6 rounded-full bg-emerald-500 active:bg-emerald-600 flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.3)]",
+      "secondary": "h-12 px-6 rounded-full bg-zinc-800 border border-zinc-700 active:bg-zinc-700 flex items-center justify-center",
+      "destructive": "h-12 px-6 rounded-full bg-rose-500/10 border border-rose-500/50 text-rose-500 active:bg-rose-500/20 flex items-center justify-center",
+      "ghost": "h-10 px-4 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center"
+    },
+    "cards": {
+      "base": "bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-sm",
+      "hover_effect": "hover:border-zinc-700 transition-colors duration-200",
+      "glass": "bg-zinc-900/80 backdrop-blur-xl border border-white/5 rounded-xl",
+      "interactive": "active:scale-[0.98] transition-transform duration-100"
+    },
+    "inputs": {
+      "base": "h-12 bg-zinc-950 border border-zinc-800 rounded-lg px-4 text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-zinc-600",
+      "error": "border-rose-500 focus:border-rose-500 focus:ring-rose-500"
+    },
+    "status_badges": {
+      "success": "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-md text-xs font-medium uppercase tracking-wide",
+      "warning": "bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-md text-xs font-medium uppercase tracking-wide",
+      "error": "bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-md text-xs font-medium uppercase tracking-wide"
+    }
+  },
+  "assets": {
+    "images": [
+      {
+        "category": "background",
+        "url": "https://images.pexels.com/photos/8093782/pexels-photo-8093782.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Chef with blurred background - Login Screen / Auth",
+        "alt": "Chef preparing food in dark kitchen"
+      },
+      {
+        "category": "background",
+        "url": "https://images.pexels.com/photos/25050484/pexels-photo-25050484.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Moody kitchen window - Alternative Auth Background",
+        "alt": "Chef working in dimly lit kitchen"
+      },
+      {
+        "category": "illustration",
+        "url": "https://images.pexels.com/photos/28428584/pexels-photo-28428584.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Abstract 3D Shapes - Empty State / Dashboard Hero",
+        "alt": "Abstract geometric shapes blue"
+      },
+      {
+        "category": "persona",
+        "url": "https://images.pexels.com/photos/4353574/pexels-photo-4353574.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Friendly Barista - Staff Persona / Success State",
+        "alt": "Barista staff smiling"
+      }
+    ],
+    "icons": {
+      "library": "lucide-react-native",
+      "style": "stroke-width: 1.5px, size: 24px"
+    }
+  },
+  "animations": {
+    "transitions": {
+      "default": "transition-all duration-200 ease-in-out",
+      "slow": "transition-all duration-500 ease-out",
+      "spring": "spring config: { damping: 15, stiffness: 120 }"
+    },
+    "micro_interactions": {
+      "button_press": "scale: 0.96",
+      "card_hover": "translate-y: -2px",
+      "modal_enter": "slide-up-fade-in"
+    }
+  },
+  "accessibility": {
+    "contrast": "Ensure text-to-background ratio is at least 4.5:1. Use lighter grays (zinc-400) for muted text, never dark gray on black.",
+    "touch_targets": "Minimum 48x48px for all interactive elements on mobile.",
+    "text_scaling": "Support dynamic type sizes. Do not hardcode fixed heights for text containers."
+  },
+  "universal_guidelines": [
+    "Design for dark mode first - deep zinc backgrounds, not pure black.",
+    "Use NativeWind (Tailwind) classes for all styling. Install it if missing.",
+    "Avoid gradients for backgrounds; use them only for accents/buttons.",
+    "Data density: High for Owners (Bento Grid), Low for Staff (Single Focus).",
+    "All financial data must be monospaced (JetBrains Mono).",
+    "Use 'Lucide React Native' for icons.",
+    "Components must use `data-testid` for testing.",
+    "Do not use `div` or `span` - use `View` and `Text` (React Native primitives).",
+    "Always assume mobile-first responsive design.",
+    "Use 'Sonner' or 'Burnt' for toasts/notifications."
+  ],
+  "implementation_notes": {
+    "stack": "React Native Expo + NativeWind (Tailwind)",
+    "navigation": "Expo Router (File-based routing)",
+    "styling_strategy": "Utility-first with NativeWind. Create a 'components/ui' folder for reusable primitives.",
+    "missing_dependencies_action": "Install 'nativewind', 'tailwindcss', 'lucide-react-native', 'clsx', 'tailwind-merge' if not present."
+  }
+}
