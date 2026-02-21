@@ -373,9 +373,10 @@ class TestBulkDocumentActions:
         print(f"Approving {len(doc_ids)} documents")
         
         # Prepare form data
+        import json
         form_data = {
             'action': 'approve',
-            'document_ids': str(doc_ids).replace("'", '"')
+            'document_ids': json.dumps(doc_ids)
         }
         
         response = api_client.post(
