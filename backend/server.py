@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,53 +7,613 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import jwt
+import bcrypt
+import base64
+import json
 
+from ai_pipeline import extract_document_data, match_supplier, calculate_exchange_rate
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
+# MongoDB
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
+JWT_SECRET = os.environ.get('JWT_SECRET', 'fintech-platform-secret-key-2024')
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = 72
+
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+security = HTTPBearer()
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Upload directory
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+# --- Auth Helpers ---
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-# Add your routes to the router instead of directly to app
+def create_token(user_id: str, role: str, org_id: str) -> str:
+    payload = {
+        "user_id": user_id,
+        "role": role,
+        "org_id": org_id,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# --- Pydantic Models ---
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class InviteRequest(BaseModel):
+    email: str
+    name: str
+    role: str
+    outlet_ids: List[str] = []
+
+class DocumentUpdate(BaseModel):
+    document_date: Optional[str] = None
+    supplier_id: Optional[str] = None
+    supplier_name: Optional[str] = None
+    status: Optional[str] = None
+    document_type: Optional[str] = None
+
+
+# --- AUTH ---
+@api_router.post("/auth/login")
+async def login(req: LoginRequest):
+    user = await db.users.find_one({"email": req.email}, {"_id": 0})
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Account deactivated")
+    token = create_token(user["id"], user["role"], user["org_id"])
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"], "email": user["email"], "name": user["name"],
+            "role": user["role"], "org_id": user["org_id"], "outlet_ids": user.get("outlet_ids", []),
+        }
+    }
+
+@api_router.get("/auth/me")
+async def get_me(user=Depends(get_current_user)):
+    org = await db.organizations.find_one({"id": user["org_id"]}, {"_id": 0})
+    outlets = await db.outlets.find({"id": {"$in": user.get("outlet_ids", [])}}, {"_id": 0}).to_list(100)
+    return {
+        "user": {
+            "id": user["id"], "email": user["email"], "name": user["name"],
+            "role": user["role"], "org_id": user["org_id"], "outlet_ids": user.get("outlet_ids", []),
+        },
+        "organization": org,
+        "outlets": outlets,
+    }
+
+
+# --- USERS / INVITES ---
+@api_router.post("/users/invite")
+async def invite_user(req: InviteRequest, user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Only owners and accounts can invite users")
+    if req.role == "owner":
+        owner_count = await db.users.count_documents({"org_id": user["org_id"], "role": "owner"})
+        if owner_count >= 4:
+            raise HTTPException(status_code=400, detail="Maximum 4 owners per organization")
+    existing = await db.users.find_one({"email": req.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already exists")
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "org_id": user["org_id"],
+        "email": req.email,
+        "name": req.name,
+        "role": req.role,
+        "outlet_ids": req.outlet_ids if req.outlet_ids else user.get("outlet_ids", []),
+        "password_hash": hash_password("welcome123"),
+        "is_active": True,
+        "invited_by": user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(new_user)
+    return {"message": "User invited", "id": new_user["id"], "temp_password": "welcome123"}
+
+@api_router.get("/users")
+async def list_users(user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    users = await db.users.find({"org_id": user["org_id"]}, {"_id": 0, "password_hash": 0}).to_list(100)
+    return {"users": users}
+
+
+# --- ORGANIZATIONS ---
+@api_router.get("/organizations/me")
+async def get_my_org(user=Depends(get_current_user)):
+    org = await db.organizations.find_one({"id": user["org_id"]}, {"_id": 0})
+    return org or {}
+
+
+# --- OUTLETS ---
+@api_router.get("/outlets")
+async def list_outlets(user=Depends(get_current_user)):
+    if user["role"] in ["owner", "accounts"]:
+        outlets = await db.outlets.find({"org_id": user["org_id"]}, {"_id": 0}).to_list(100)
+    else:
+        outlets = await db.outlets.find({"id": {"$in": user.get("outlet_ids", [])}}, {"_id": 0}).to_list(100)
+    return {"outlets": outlets}
+
+
+# --- DOCUMENT UPLOAD ---
+@api_router.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    outlet_id: str = Form(...),
+    user=Depends(get_current_user)
+):
+    # Validate outlet access
+    if user["role"] not in ["owner", "accounts"] and outlet_id not in user.get("outlet_ids", []):
+        raise HTTPException(status_code=403, detail="No access to this outlet")
+
+    # Read file
+    content = await file.read()
+    file_size = len(content)
+    filename = file.filename or "unknown.jpg"
+
+    # Save file locally (simulating Firebase Storage)
+    doc_id = str(uuid.uuid4())
+    file_ext = Path(filename).suffix or ".jpg"
+    save_dir = UPLOAD_DIR / user["org_id"] / outlet_id
+    save_dir.mkdir(parents=True, exist_ok=True)
+    save_path = save_dir / f"{doc_id}{file_ext}"
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    # AI Pipeline - Extract data
+    extracted = extract_document_data(filename, file_size)
+
+    # Determine document date
+    doc_date = extracted.get("document_date")
+    date_confidence = extracted.get("document_date_confidence", 0)
+    requires_review = date_confidence < 0.6 or doc_date is None or extracted["extraction_confidence"] < 0.6
+
+    # Supplier matching
+    existing_suppliers = await db.suppliers.find({"org_id": user["org_id"]}, {"_id": 0}).to_list(100)
+    supplier_match = match_supplier(
+        extracted.get("supplier_name", ""),
+        extracted.get("supplier_gst"),
+        existing_suppliers
+    )
+
+    # Exchange rate
+    currency = extracted.get("currency", "INR")
+    rate_info = calculate_exchange_rate(currency, doc_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    total_amount = extracted.get("total_amount", 0)
+    converted_inr = round(total_amount * rate_info["exchange_rate"], 2) if currency != "INR" else total_amount
+
+    # Storage path by document date
+    if doc_date:
+        parts = doc_date.split("-")
+        storage_path = f"/{user['org_id']}/{outlet_id}/{parts[0]}/{parts[1]}/{parts[2]}/{doc_id}{file_ext}"
+    else:
+        now = datetime.now(timezone.utc)
+        storage_path = f"/{user['org_id']}/{outlet_id}/unclassified/{doc_id}{file_ext}"
+
+    # Store base64 thumbnail for preview
+    file_base64 = base64.b64encode(content).decode('utf-8') if file_size < 2_000_000 else None
+
+    document = {
+        "id": doc_id,
+        "org_id": user["org_id"],
+        "outlet_id": outlet_id,
+        "document_type": extracted.get("document_type", "unknown"),
+        "document_date": doc_date,
+        "upload_timestamp": datetime.now(timezone.utc).isoformat(),
+        "processing_timestamp": datetime.now(timezone.utc).isoformat(),
+        "extraction_confidence": extracted["extraction_confidence"],
+        "requires_review": requires_review,
+        "status": "needs_review" if requires_review else "processed",
+        "supplier_id": supplier_match.get("matched_id"),
+        "supplier_name": extracted.get("supplier_name", "Unknown"),
+        "supplier_match_confidence": supplier_match.get("confidence", 0),
+        "file_path": storage_path,
+        "original_filename": filename,
+        "file_size": file_size,
+        "file_base64": file_base64,
+        "uploader_id": user["id"],
+        "uploader_name": user["name"],
+        "extracted_data": {
+            "total_amount": total_amount,
+            "tax_amount": extracted.get("tax_amount", 0),
+            "subtotal": extracted.get("subtotal", 0),
+            "currency": currency,
+            "invoice_number": extracted.get("invoice_number"),
+            "line_items": extracted.get("line_items", []),
+        },
+        "exchange_rate": rate_info["exchange_rate"],
+        "original_currency": currency,
+        "converted_inr_amount": converted_inr,
+        "rate_timestamp": rate_info["rate_timestamp"],
+    }
+    await db.documents.insert_one(document)
+
+    # Return without _id
+    document.pop("_id", None)
+    # Don't return base64 in upload response (too large)
+    document.pop("file_base64", None)
+
+    return {
+        "message": "Document uploaded and processed",
+        "document": document,
+        "ai_summary": {
+            "confidence": extracted["extraction_confidence"],
+            "method": extracted.get("extraction_method"),
+            "requires_review": requires_review,
+            "supplier_matched": supplier_match.get("matched_id") is not None,
+        }
+    }
+
+
+# --- DOCUMENTS ---
+@api_router.get("/documents")
+async def list_documents(
+    outlet_id: Optional[str] = None,
+    status: Optional[str] = None,
+    document_type: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    user=Depends(get_current_user)
+):
+    query = {"org_id": user["org_id"]}
+
+    # Role-based filtering
+    if user["role"] not in ["owner", "accounts"]:
+        query["outlet_id"] = {"$in": user.get("outlet_ids", [])}
+
+    if outlet_id:
+        query["outlet_id"] = outlet_id
+    if status:
+        query["status"] = status
+    if document_type:
+        query["document_type"] = document_type
+    if supplier_name:
+        query["supplier_name"] = {"$regex": supplier_name, "$options": "i"}
+    if date_from or date_to:
+        date_filter = {}
+        if date_from:
+            date_filter["$gte"] = date_from
+        if date_to:
+            date_filter["$lte"] = date_to
+        query["document_date"] = date_filter
+    if search:
+        query["$or"] = [
+            {"supplier_name": {"$regex": search, "$options": "i"}},
+            {"original_filename": {"$regex": search, "$options": "i"}},
+            {"document_type": {"$regex": search, "$options": "i"}},
+        ]
+
+    skip = (page - 1) * limit
+    total = await db.documents.count_documents(query)
+    docs = await db.documents.find(query, {"_id": 0, "file_base64": 0}).sort("document_date", -1).skip(skip).limit(limit).to_list(limit)
+
+    return {"documents": docs, "total": total, "page": page, "pages": (total + limit - 1) // limit}
+
+
+@api_router.get("/documents/review-queue")
+async def review_queue(user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Only owners and accounts can access review queue")
+    query = {"org_id": user["org_id"], "status": "needs_review"}
+    docs = await db.documents.find(query, {"_id": 0, "file_base64": 0}).sort("upload_timestamp", -1).to_list(100)
+    return {"documents": docs, "count": len(docs)}
+
+
+@api_router.get("/documents/{doc_id}")
+async def get_document(doc_id: str, user=Depends(get_current_user)):
+    doc = await db.documents.find_one({"id": doc_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+@api_router.put("/documents/{doc_id}")
+async def update_document(doc_id: str, update: DocumentUpdate, user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"]:
+        raise HTTPException(status_code=403, detail="Not authorized to update documents")
+
+    update_dict = {k: v for k, v in update.dict().items() if v is not None}
+    if not update_dict:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    if "status" in update_dict and update_dict["status"] == "processed":
+        update_dict["requires_review"] = False
+
+    result = await db.documents.update_one(
+        {"id": doc_id, "org_id": user["org_id"]},
+        {"$set": update_dict}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    updated = await db.documents.find_one({"id": doc_id}, {"_id": 0, "file_base64": 0})
+    return updated
+
+
+# --- SUPPLIERS ---
+@api_router.get("/suppliers")
+async def list_suppliers(user=Depends(get_current_user)):
+    suppliers = await db.suppliers.find({"org_id": user["org_id"]}, {"_id": 0}).to_list(200)
+    return {"suppliers": suppliers}
+
+
+# --- DASHBOARD ---
+@api_router.get("/dashboard/global")
+async def global_dashboard(days: int = 30, user=Depends(get_current_user)):
+    if user["role"] not in ["owner"]:
+        raise HTTPException(status_code=403, detail="Owner access required")
+
+    date_from = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    outlets = await db.outlets.find({"org_id": user["org_id"]}, {"_id": 0}).to_list(100)
+
+    # Aggregate metrics by outlet
+    outlet_metrics = []
+    total_revenue = 0
+    total_food_cost = 0
+    total_expenses = 0
+    total_profit = 0
+
+    for outlet in outlets:
+        metrics = await db.daily_metrics.find(
+            {"outlet_id": outlet["id"], "document_date": {"$gte": date_from}},
+            {"_id": 0}
+        ).to_list(100)
+
+        rev = sum(m.get("revenue", 0) for m in metrics)
+        fc = sum(m.get("food_cost", 0) for m in metrics)
+        exp = sum(m.get("other_expenses", 0) + m.get("labor_cost", 0) for m in metrics)
+        profit = sum(m.get("profit_estimate", 0) for m in metrics)
+
+        total_revenue += rev
+        total_food_cost += fc
+        total_expenses += exp
+        total_profit += profit
+
+        outlet_metrics.append({
+            "outlet_id": outlet["id"],
+            "outlet_name": outlet["name"],
+            "city": outlet.get("city", ""),
+            "revenue": round(rev, 2),
+            "food_cost": round(fc, 2),
+            "expenses": round(exp, 2),
+            "profit": round(profit, 2),
+            "food_cost_pct": round(fc / rev * 100, 1) if rev > 0 else 0,
+            "days_with_data": len(metrics),
+        })
+
+    # Review queue count
+    review_count = await db.documents.count_documents({"org_id": user["org_id"], "status": "needs_review"})
+
+    # Recent documents count
+    recent_docs = await db.documents.count_documents({
+        "org_id": user["org_id"],
+        "document_date": {"$gte": date_from}
+    })
+
+    # Expense breakdown by type
+    expense_docs = await db.documents.find(
+        {"org_id": user["org_id"], "document_date": {"$gte": date_from}, "status": "processed"},
+        {"_id": 0, "document_type": 1, "converted_inr_amount": 1}
+    ).to_list(1000)
+
+    expense_by_type = {}
+    for d in expense_docs:
+        dt = d.get("document_type", "other")
+        expense_by_type[dt] = expense_by_type.get(dt, 0) + d.get("converted_inr_amount", 0)
+
+    # Daily revenue trend (last 7 days)
+    daily_trend = []
+    for i in range(7):
+        day = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d")
+        day_metrics = await db.daily_metrics.find(
+            {"org_id": user["org_id"], "document_date": day}, {"_id": 0}
+        ).to_list(100)
+        day_rev = sum(m.get("revenue", 0) for m in day_metrics)
+        daily_trend.append({"date": day, "revenue": round(day_rev, 2)})
+
+    return {
+        "period_days": days,
+        "total_revenue": round(total_revenue, 2),
+        "total_food_cost": round(total_food_cost, 2),
+        "total_expenses": round(total_expenses, 2),
+        "total_profit": round(total_profit, 2),
+        "food_cost_pct": round(total_food_cost / total_revenue * 100, 1) if total_revenue > 0 else 0,
+        "outlet_metrics": outlet_metrics,
+        "review_queue_count": review_count,
+        "documents_processed": recent_docs,
+        "expense_by_type": {k: round(v, 2) for k, v in expense_by_type.items()},
+        "daily_trend": list(reversed(daily_trend)),
+    }
+
+
+@api_router.get("/dashboard/outlet/{outlet_id}")
+async def outlet_dashboard(outlet_id: str, days: int = 30, user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts"] and outlet_id not in user.get("outlet_ids", []):
+        raise HTTPException(status_code=403, detail="No access to this outlet")
+
+    outlet = await db.outlets.find_one({"id": outlet_id}, {"_id": 0})
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+
+    date_from = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    metrics = await db.daily_metrics.find(
+        {"outlet_id": outlet_id, "document_date": {"$gte": date_from}},
+        {"_id": 0}
+    ).sort("document_date", -1).to_list(100)
+
+    total_rev = sum(m.get("revenue", 0) for m in metrics)
+    total_fc = sum(m.get("food_cost", 0) for m in metrics)
+    total_labor = sum(m.get("labor_cost", 0) for m in metrics)
+    total_other = sum(m.get("other_expenses", 0) for m in metrics)
+    total_profit = sum(m.get("profit_estimate", 0) for m in metrics)
+    total_agg = sum(m.get("aggregator_revenue", 0) for m in metrics)
+    total_dine = sum(m.get("dine_in_revenue", 0) for m in metrics)
+
+    # Recent documents
+    recent_docs = await db.documents.find(
+        {"outlet_id": outlet_id, "document_date": {"$gte": date_from}},
+        {"_id": 0, "file_base64": 0}
+    ).sort("document_date", -1).limit(10).to_list(10)
+
+    # Daily breakdown
+    daily = []
+    for m in metrics[:14]:
+        daily.append({
+            "date": m["document_date"],
+            "revenue": m.get("revenue", 0),
+            "food_cost": m.get("food_cost", 0),
+            "profit": m.get("profit_estimate", 0),
+            "orders": m.get("order_count", 0),
+        })
+
+    return {
+        "outlet": outlet,
+        "period_days": days,
+        "total_revenue": round(total_rev, 2),
+        "total_food_cost": round(total_fc, 2),
+        "food_cost_pct": round(total_fc / total_rev * 100, 1) if total_rev > 0 else 0,
+        "total_labor_cost": round(total_labor, 2),
+        "total_other_expenses": round(total_other, 2),
+        "total_profit": round(total_profit, 2),
+        "aggregator_revenue": round(total_agg, 2),
+        "dine_in_revenue": round(total_dine, 2),
+        "aggregator_pct": round(total_agg / total_rev * 100, 1) if total_rev > 0 else 0,
+        "avg_daily_revenue": round(total_rev / max(len(metrics), 1), 2),
+        "order_count": sum(m.get("order_count", 0) for m in metrics),
+        "daily_breakdown": daily,
+        "recent_documents": recent_docs,
+    }
+
+
+# --- CALENDAR COMPLIANCE ---
+@api_router.get("/calendar/{outlet_id}/{year}/{month}")
+async def calendar_compliance(outlet_id: str, year: int, month: int, user=Depends(get_current_user)):
+    if user["role"] not in ["owner", "accounts", "manager"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Get required report types from org settings
+    org = await db.organizations.find_one({"id": user["org_id"]}, {"_id": 0})
+    required = (org or {}).get("settings", {}).get("required_daily_reports", ["sales_receipt", "purchase_invoice"])
+
+    # Get all documents for this outlet in the month
+    date_prefix = f"{year}-{month:02d}"
+    docs = await db.documents.find(
+        {"outlet_id": outlet_id, "document_date": {"$regex": f"^{date_prefix}"}},
+        {"_id": 0, "document_date": 1, "document_type": 1, "status": 1}
+    ).to_list(500)
+
+    # Build day-by-day compliance
+    import calendar
+    num_days = calendar.monthrange(year, month)[1]
+    days = []
+
+    for day in range(1, num_days + 1):
+        date_str = f"{year}-{month:02d}-{day:02d}"
+        day_docs = [d for d in docs if d.get("document_date") == date_str]
+        types_present = set(d.get("document_type") for d in day_docs)
+        types_needed = set(required)
+
+        if types_needed.issubset(types_present):
+            status = "complete"
+        elif types_present:
+            status = "partial"
+        else:
+            # Future days are not missing
+            day_date = datetime(year, month, day, tzinfo=timezone.utc)
+            if day_date > datetime.now(timezone.utc):
+                status = "future"
+            else:
+                status = "missing"
+
+        days.append({
+            "date": date_str,
+            "day": day,
+            "status": status,
+            "documents_count": len(day_docs),
+            "types_present": list(types_present),
+            "types_missing": list(types_needed - types_present) if status != "future" else [],
+        })
+
+    return {
+        "outlet_id": outlet_id,
+        "year": year,
+        "month": month,
+        "days": days,
+        "summary": {
+            "complete": sum(1 for d in days if d["status"] == "complete"),
+            "partial": sum(1 for d in days if d["status"] == "partial"),
+            "missing": sum(1 for d in days if d["status"] == "missing"),
+            "future": sum(1 for d in days if d["status"] == "future"),
+        }
+    }
+
+
+# --- STATS ---
+@api_router.get("/stats")
+async def get_stats(user=Depends(get_current_user)):
+    org_id = user["org_id"]
+    total_docs = await db.documents.count_documents({"org_id": org_id})
+    review_count = await db.documents.count_documents({"org_id": org_id, "status": "needs_review"})
+    outlet_count = await db.outlets.count_documents({"org_id": org_id})
+    supplier_count = await db.suppliers.count_documents({"org_id": org_id})
+    user_count = await db.users.count_documents({"org_id": org_id})
+
+    return {
+        "total_documents": total_docs,
+        "needs_review": review_count,
+        "outlets": outlet_count,
+        "suppliers": supplier_count,
+        "users": user_count,
+    }
+
+
+# --- Health ---
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Financial Intelligence Platform API", "version": "1.0.0"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
-
-# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
@@ -62,13 +623,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
