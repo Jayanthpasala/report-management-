@@ -163,6 +163,31 @@ export const api = {
 
   // Phase 4: Outlet Config
   getOutlet: (id: string) => request(`/outlets/${id}`),
+  getOutletConfig: (id: string) => request(`/outlets/${id}/config`),
+  updateOutletConfig: (id: string, data: any) =>
+    request(`/outlets/${id}/config`, { method: 'PUT', body: JSON.stringify(data) }),
   updateOutlet: (id: string, data: any) =>
     request(`/outlets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Phase 4: Enhanced Supplier Operations
+  updateSupplier: (id: string, data: { name?: string; gst_id?: string; category?: string; country?: string; is_verified?: boolean }) => {
+    const formData = new FormData();
+    if (data.name) formData.append('name', data.name);
+    if (data.gst_id !== undefined) formData.append('gst_id', data.gst_id);
+    if (data.category) formData.append('category', data.category);
+    if (data.country) formData.append('country', data.country);
+    if (data.is_verified !== undefined) formData.append('is_verified', String(data.is_verified));
+    return request(`/suppliers/${id}`, { method: 'PUT', body: formData });
+  },
+  validateGST: (gst_id: string, country: string = 'India') => {
+    const formData = new FormData();
+    formData.append('gst_id', gst_id);
+    formData.append('country', country);
+    return request('/suppliers/validate-gst', { method: 'POST', body: formData });
+  },
+  checkSupplierDuplicate: (name: string) => {
+    const formData = new FormData();
+    formData.append('name', name);
+    return request('/suppliers/check-duplicate', { method: 'POST', body: formData });
+  },
 };
