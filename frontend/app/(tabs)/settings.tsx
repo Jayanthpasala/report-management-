@@ -266,4 +266,23 @@ const s = StyleSheet.create({
     padding: spacing.lg, borderWidth: 1, borderColor: colors.status.error + '30',
   },
   logoutText: { fontSize: fonts.sizes.md, fontWeight: fonts.weights.semibold, color: colors.status.error },
+
+  // Notification Preferences
+  prefRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.background.surface, borderRadius: radius.md,
+    padding: spacing.lg, marginBottom: spacing.xs,
+    borderWidth: 1, borderColor: colors.border.default, gap: spacing.md,
+  },
+  prefLabel: { flex: 1, fontSize: fonts.sizes.md, color: colors.text.primary },
+  toggle: {
+    width: 44, height: 24, borderRadius: 12,
+    backgroundColor: colors.background.overlay, justifyContent: 'center', paddingHorizontal: 2,
+  },
+  toggleOn: { backgroundColor: colors.brand.primary },
+  toggleDot: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: colors.text.muted,
+  },
+  toggleDotOn: { backgroundColor: '#fff', alignSelf: 'flex-end' },
 });
