@@ -139,7 +139,7 @@ export default function LoginScreen() {
           <Text style={s.demoTitle}>Demo Access</Text>
           <View style={s.demoGrid}>
             {[
-              { role: 'owner', icon: 'crown-outline' as const, label: 'Owner', color: colors.brand.primary },
+              { role: 'owner', icon: 'shield-checkmark-outline' as const, label: 'Owner', color: colors.brand.primary },
               { role: 'manager', icon: 'business-outline' as const, label: 'Manager', color: colors.status.info },
               { role: 'staff', icon: 'person-outline' as const, label: 'Staff', color: colors.status.warning },
               { role: 'accounts', icon: 'calculator-outline' as const, label: 'Accounts', color: colors.brand.secondary },
