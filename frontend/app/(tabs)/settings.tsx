@@ -81,15 +81,27 @@ export default function SettingsScreen() {
         <View style={s.section}>
           <Text style={s.sectionTitle}>Outlets ({outlets?.length || 0})</Text>
           {outlets?.map((o: any) => (
-            <TouchableOpacity key={o.id} style={s.outletRow} onPress={() => router.push({ pathname: '/calendar', params: { outlet_id: o.id } })}>
+            <TouchableOpacity 
+              key={o.id} 
+              style={s.outletRow} 
+              onPress={() => user?.role === 'owner' 
+                ? router.push({ pathname: '/outlet-config', params: { outlet_id: o.id } })
+                : router.push({ pathname: '/calendar', params: { outlet_id: o.id } })
+              }
+            >
               <View style={s.outletIcon}>
                 <Ionicons name="storefront-outline" size={20} color={colors.brand.primary} />
               </View>
               <View style={s.outletInfo}>
                 <Text style={s.outletName}>{o.name}</Text>
-                <Text style={s.outletCity}>{o.city}, {o.country}</Text>
+                <Text style={s.outletCity}>{o.city}, {o.country} · {o.currency || 'INR'}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
+              <View style={s.outletActions}>
+                {user?.role === 'owner' && (
+                  <Ionicons name="settings-outline" size={16} color={colors.text.muted} style={{ marginRight: 4 }} />
+                )}
+                <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
+              </View>
             </TouchableOpacity>
           ))}
         </View>
