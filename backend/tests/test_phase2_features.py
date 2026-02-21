@@ -372,16 +372,18 @@ class TestBulkDocumentActions:
         doc_ids = [d["id"] for d in docs[:2]]
         print(f"Approving {len(doc_ids)} documents")
         
-        # Prepare form data
+        # Prepare form data - need to remove Content-Type header for multipart
         import json
         form_data = {
             'action': 'approve',
             'document_ids': json.dumps(doc_ids)
         }
         
+        # Create new session without Content-Type header for form data
+        headers_no_content_type = {"Authorization": auth_headers_owner["Authorization"]}
         response = api_client.post(
             f"{base_url}/api/documents/bulk-action",
-            headers={"Authorization": auth_headers_owner["Authorization"]},
+            headers=headers_no_content_type,
             data=form_data
         )
         print(f"Status: {response.status_code}")
@@ -418,9 +420,10 @@ class TestBulkDocumentActions:
             'document_ids': json.dumps(doc_ids)
         }
         
+        headers_no_content_type = {"Authorization": auth_headers_owner["Authorization"]}
         response = api_client.post(
             f"{base_url}/api/documents/bulk-action",
-            headers={"Authorization": auth_headers_owner["Authorization"]},
+            headers=headers_no_content_type,
             data=form_data
         )
         print(f"Status: {response.status_code}")
@@ -438,9 +441,10 @@ class TestBulkDocumentActions:
             'document_ids': json.dumps(["test-id"])
         }
         
+        headers_no_content_type = {"Authorization": auth_headers_staff["Authorization"]}
         response = api_client.post(
             f"{base_url}/api/documents/bulk-action",
-            headers={"Authorization": auth_headers_staff["Authorization"]},
+            headers=headers_no_content_type,
             data=form_data
         )
         print(f"Status: {response.status_code}")
