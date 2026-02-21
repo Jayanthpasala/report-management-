@@ -179,11 +179,12 @@ async def list_outlets(user=Depends(get_current_user)):
     return {"outlets": outlets}
 
 
-# --- DOCUMENT UPLOAD ---
+# --- DOCUMENT UPLOAD (Phase 3: Pluggable AI Processor) ---
 @api_router.post("/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
     outlet_id: str = Form(...),
+    file_hash: Optional[str] = Form(None),
     user=Depends(get_current_user)
 ):
     # Validate outlet access
@@ -194,6 +195,16 @@ async def upload_document(
     content = await file.read()
     file_size = len(content)
     filename = file.filename or "unknown.jpg"
+    mime_type = file.content_type or "image/jpeg"
+
+    # Duplicate protection via content hash
+    content_hash = file_hash or hashlib.sha256(content).hexdigest()
+    existing_dup = await db.documents.find_one(
+        {"org_id": user["org_id"], "content_hash": content_hash, "outlet_id": outlet_id},
+        {"_id": 0, "id": 1}
+    )
+    if existing_dup:
+        return {"message": "Duplicate detected", "duplicate": True, "existing_id": existing_dup["id"]}
 
     # Save file locally (simulating Firebase Storage)
     doc_id = str(uuid.uuid4())
@@ -204,27 +215,29 @@ async def upload_document(
     with open(save_path, "wb") as f:
         f.write(content)
 
-    # AI Pipeline - Extract data
-    extracted = extract_document_data(filename, file_size)
+    # AI Pipeline - Use pluggable processor
+    processor = get_processor()
+    try:
+        result = await processor.extract(content, filename, mime_type)
+    except Exception as e:
+        logger.error(f"AI extraction failed, falling back to mock: {e}")
+        from document_processor import MockProcessor
+        result = await MockProcessor().extract(content, filename, mime_type)
 
-    # Determine document date
-    doc_date = extracted.get("document_date")
-    date_confidence = extracted.get("document_date_confidence", 0)
-    requires_review = date_confidence < 0.6 or doc_date is None or extracted["extraction_confidence"] < 0.6
+    # Extract fields from result
+    doc_date = result.document_date
+    date_confidence = result.document_date_confidence
+    confidence = result.extraction_confidence
+    requires_review = date_confidence < 0.6 or doc_date is None or confidence < 0.6
 
     # Supplier matching
     existing_suppliers = await db.suppliers.find({"org_id": user["org_id"]}, {"_id": 0}).to_list(100)
-    supplier_match = match_supplier(
-        extracted.get("supplier_name", ""),
-        extracted.get("supplier_gst"),
-        existing_suppliers
-    )
+    supplier_match = match_supplier(result.supplier_name, result.supplier_gst, existing_suppliers)
 
-    # Exchange rate
-    currency = extracted.get("currency", "INR")
-    rate_info = calculate_exchange_rate(currency, doc_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
-    total_amount = extracted.get("total_amount", 0)
-    converted_inr = round(total_amount * rate_info["exchange_rate"], 2) if currency != "INR" else total_amount
+    # Exchange rate using currency engine
+    currency = result.currency or "INR"
+    rate_date = doc_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    rate_info = await convert_to_inr(db, result.total_amount, currency, rate_date)
 
     # Storage path by document date
     if doc_date:
@@ -233,57 +246,81 @@ async def upload_document(
     else:
         storage_path = f"/{user['org_id']}/{outlet_id}/unclassified/{doc_id}{file_ext}"
 
-    # Store base64 thumbnail for preview
     file_base64 = base64.b64encode(content).decode('utf-8') if file_size < 2_000_000 else None
 
     document = {
         "id": doc_id,
         "org_id": user["org_id"],
         "outlet_id": outlet_id,
-        "document_type": extracted.get("document_type", "unknown"),
+        "document_type": result.document_type,
         "document_date": doc_date,
         "upload_timestamp": datetime.now(timezone.utc).isoformat(),
         "processing_timestamp": datetime.now(timezone.utc).isoformat(),
-        "extraction_confidence": extracted["extraction_confidence"],
+        "extraction_confidence": confidence,
         "requires_review": requires_review,
         "status": "needs_review" if requires_review else "processed",
         "supplier_id": supplier_match.get("matched_id"),
-        "supplier_name": extracted.get("supplier_name", "Unknown"),
+        "supplier_name": result.supplier_name or "Unknown",
         "supplier_match_confidence": supplier_match.get("confidence", 0),
         "file_path": storage_path,
         "original_filename": filename,
         "file_size": file_size,
         "file_base64": file_base64,
+        "content_hash": content_hash,
         "uploader_id": user["id"],
         "uploader_name": user["name"],
+        "ai_provider_used": result.ai_provider_used,
+        "extraction_method": result.extraction_method,
+        "raw_ocr_text": result.raw_ocr_text[:3000] if result.raw_ocr_text else "",
         "extracted_data": {
-            "total_amount": total_amount,
-            "tax_amount": extracted.get("tax_amount", 0),
-            "subtotal": extracted.get("subtotal", 0),
+            "total_amount": result.total_amount,
+            "tax_amount": result.tax_amount,
+            "subtotal": result.subtotal,
             "currency": currency,
-            "invoice_number": extracted.get("invoice_number"),
-            "line_items": extracted.get("line_items", []),
+            "invoice_number": result.invoice_number,
+            "line_items": result.line_items,
         },
-        "exchange_rate": rate_info["exchange_rate"],
+        "exchange_rate": rate_info["exchange_rate_used"],
         "original_currency": currency,
-        "converted_inr_amount": converted_inr,
+        "converted_inr_amount": rate_info["converted_inr_amount"],
         "rate_timestamp": rate_info["rate_timestamp"],
+        "rate_source": rate_info["rate_source"],
+        "version_number": 1,
     }
     await db.documents.insert_one(document)
 
-    # Return without _id
+    # Create low-confidence notification
+    if requires_review:
+        notif = {
+            "id": str(uuid.uuid4()),
+            "org_id": user["org_id"],
+            "user_role": "accounts",
+            "type": "low_confidence",
+            "title": f"Low confidence: {filename}",
+            "body": f"AI confidence {confidence*100:.0f}% for {result.supplier_name}. Review needed.",
+            "severity": "warning",
+            "color": "#fbbf24",
+            "related_id": doc_id,
+            "related_type": "document",
+            "is_read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.notifications.insert_one(notif)
+
     document.pop("_id", None)
-    # Don't return base64 in upload response (too large)
     document.pop("file_base64", None)
 
     return {
         "message": "Document uploaded and processed",
         "document": document,
+        "duplicate": False,
         "ai_summary": {
-            "confidence": extracted["extraction_confidence"],
-            "method": extracted.get("extraction_method"),
+            "confidence": confidence,
+            "method": result.extraction_method,
+            "provider": result.ai_provider_used,
             "requires_review": requires_review,
             "supplier_matched": supplier_match.get("matched_id") is not None,
+            "retries_used": result.retries_used,
         }
     }
 
