@@ -61,6 +61,22 @@ FinSight is a mobile-first AI-powered financial intelligence platform for multi-
 - [x] Enhanced Document Detail (version badge, AI provider chip, version timeline, raw OCR text)
 - [x] Enhanced Settings (AI processor info, notification preference toggles)
 
+### Phase 4 Features (Implemented)
+- [x] Outlet Configuration Screen (country mode, currency, timezone, GST settings, required reports)
+- [x] Country Mode Toggle (India vs International with auto-configured defaults)
+- [x] Multi-currency regional support (INR, AED, SGD, USD, GBP, EUR, etc.)
+- [x] Timezone configuration per outlet
+- [x] Required daily reports configuration (compliance calendar customization)
+- [x] Business hours and contact info per outlet
+- [x] Supplier Detail Screen (full supplier profile, document history, spend analytics)
+- [x] GST/Tax ID Validation (Indian GST format validation, UAE TRN, Singapore GST)
+- [x] Supplier Duplicate Detection (fuzzy name matching with warnings)
+- [x] Supplier Category Management
+- [x] Monthly spend trend visualization per supplier
+- [x] Low-literacy friendly UI with strong validation feedback
+- [x] Outlet-level data isolation (documents scoped to outlets)
+- [x] document_date-based storage paths and reporting
+
 ### Future Enhancements (Planned)
 - [ ] Real Google Document AI integration (stub ready)
 - [ ] Real Firebase Cloud Messaging (FCM) push delivery
