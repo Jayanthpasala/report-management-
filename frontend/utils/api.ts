@@ -97,4 +97,47 @@ export const api = {
 
   // Organization
   getOrganization: () => request('/organizations/me'),
+
+  // Phase 2: Currency
+  syncRates: () => request('/currency/sync', { method: 'POST' }),
+  getRates: () => request('/currency/rates'),
+  getRateHistory: (days?: number) => request(`/currency/history${days ? `?days=${days}` : ''}`),
+
+  // Phase 2: Intelligence
+  getInsights: (days?: number, severity?: string) => {
+    const params = new URLSearchParams();
+    if (days) params.set('days', String(days));
+    if (severity) params.set('severity', severity);
+    const qs = params.toString();
+    return request(`/insights${qs ? `?${qs}` : ''}`);
+  },
+  generateInsights: () => request('/insights/generate', { method: 'POST' }),
+  markInsightRead: (id: string) => request(`/insights/${id}/read`, { method: 'PUT' }),
+
+  // Phase 2: Notifications
+  getNotifications: (unreadOnly?: boolean) =>
+    request(`/notifications${unreadOnly ? '?unread_only=true' : ''}`),
+  markNotificationRead: (id: string) => request(`/notifications/${id}/read`, { method: 'PUT' }),
+  markAllNotificationsRead: () => request('/notifications/read-all', { method: 'PUT' }),
+  triggerNotificationCheck: () => request('/notifications/trigger-check', { method: 'POST' }),
+
+  // Phase 2: Export
+  getExportUrl: (reportType: string, format: string, outletId?: string, dateFrom?: string, dateTo?: string) => {
+    const params = new URLSearchParams({ format });
+    if (outletId) params.set('outlet_id', outletId);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    return `${API_BASE}/export/${reportType}?${params.toString()}`;
+  },
+
+  // Phase 2: Bulk Operations
+  bulkAction: (action: string, documentIds: string[]) => {
+    const formData = new FormData();
+    formData.append('action', action);
+    formData.append('document_ids', JSON.stringify(documentIds));
+    return request('/documents/bulk-action', { method: 'POST', body: formData });
+  },
+
+  // Phase 2: Document versions
+  getDocumentVersions: (id: string) => request(`/documents/${id}/versions`),
 };
