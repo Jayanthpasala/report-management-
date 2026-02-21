@@ -570,25 +570,168 @@ async def get_outlet_detail(outlet_id: str, user=Depends(get_current_user)):
     return outlet
 
 
-class OutletUpdate(BaseModel):
+class OutletConfigUpdate(BaseModel):
     name: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
     currency: Optional[str] = None
+    timezone: Optional[str] = None
+    country_mode: Optional[str] = None  # "india" or "international"
+    gst_enabled: Optional[bool] = None
+    gst_rate: Optional[float] = None
+    required_daily_reports: Optional[List[str]] = None
+    business_hours_start: Optional[str] = None
+    business_hours_end: Optional[str] = None
+    contact_phone: Optional[str] = None
+    address: Optional[str] = None
 
 
-@api_router.put("/outlets/{outlet_id}")
-async def update_outlet(outlet_id: str, update: OutletUpdate, user=Depends(get_current_user)):
+# Country configuration defaults
+COUNTRY_CONFIGS = {
+    "india": {
+        "currency": "INR",
+        "timezone": "Asia/Kolkata",
+        "gst_enabled": True,
+        "gst_rate": 0.18,
+        "required_daily_reports": ["sales_receipt", "purchase_invoice"],
+    },
+    "uae": {
+        "currency": "AED",
+        "timezone": "Asia/Dubai",
+        "gst_enabled": True,
+        "gst_rate": 0.05,
+        "required_daily_reports": ["sales_receipt", "purchase_invoice"],
+    },
+    "singapore": {
+        "currency": "SGD",
+        "timezone": "Asia/Singapore",
+        "gst_enabled": True,
+        "gst_rate": 0.08,
+        "required_daily_reports": ["sales_receipt", "purchase_invoice"],
+    },
+    "usa": {
+        "currency": "USD",
+        "timezone": "America/New_York",
+        "gst_enabled": False,
+        "gst_rate": 0.0,
+        "required_daily_reports": ["sales_receipt", "purchase_invoice", "expense_bill"],
+    },
+    "uk": {
+        "currency": "GBP",
+        "timezone": "Europe/London",
+        "gst_enabled": True,
+        "gst_rate": 0.20,
+        "required_daily_reports": ["sales_receipt", "purchase_invoice"],
+    },
+}
+
+
+@api_router.get("/outlets/{outlet_id}/config")
+async def get_outlet_config(outlet_id: str, user=Depends(get_current_user)):
+    """Get full outlet configuration including regional settings."""
+    if user["role"] not in ["owner", "accounts", "manager"] and outlet_id not in user.get("outlet_ids", []):
+        raise HTTPException(status_code=403, detail="No access to this outlet")
+    
+    outlet = await db.outlets.find_one({"id": outlet_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+    
+    # Calculate stats
+    doc_count = await db.documents.count_documents({"outlet_id": outlet_id})
+    review_count = await db.documents.count_documents({"outlet_id": outlet_id, "status": "needs_review"})
+    
+    # Compute unique suppliers for this outlet
+    supplier_ids = await db.documents.distinct("supplier_id", {"outlet_id": outlet_id, "supplier_id": {"$ne": None}})
+    
+    # Get recent month total spend
+    from datetime import timedelta
+    date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    monthly_docs = await db.documents.find(
+        {"outlet_id": outlet_id, "document_date": {"$gte": date_from}, "status": "processed"},
+        {"_id": 0, "converted_inr_amount": 1}
+    ).to_list(1000)
+    monthly_spend = sum(d.get("converted_inr_amount", 0) for d in monthly_docs)
+    
+    # Determine country mode
+    country = outlet.get("country", "India").lower()
+    country_mode = "india" if country == "india" else "international"
+    
+    # Merge with defaults
+    config_defaults = COUNTRY_CONFIGS.get(country.lower().replace(" ", "_"), COUNTRY_CONFIGS["india"])
+    
+    outlet_config = {
+        **outlet,
+        "country_mode": outlet.get("country_mode", country_mode),
+        "timezone": outlet.get("timezone", config_defaults["timezone"]),
+        "gst_enabled": outlet.get("gst_enabled", config_defaults["gst_enabled"]),
+        "gst_rate": outlet.get("gst_rate", config_defaults["gst_rate"]),
+        "required_daily_reports": outlet.get("required_daily_reports", config_defaults["required_daily_reports"]),
+        "business_hours_start": outlet.get("business_hours_start", "09:00"),
+        "business_hours_end": outlet.get("business_hours_end", "22:00"),
+        "contact_phone": outlet.get("contact_phone", ""),
+        "address": outlet.get("address", ""),
+        "stats": {
+            "total_documents": doc_count,
+            "needs_review": review_count,
+            "active_suppliers": len(supplier_ids),
+            "monthly_spend": round(monthly_spend, 2),
+        },
+        "available_currencies": ["INR", "USD", "AED", "SGD", "GBP", "EUR", "SAR", "MYR", "THB", "CAD"],
+        "available_timezones": ["Asia/Kolkata", "Asia/Dubai", "Asia/Singapore", "America/New_York", "Europe/London", "America/Los_Angeles"],
+    }
+    
+    return outlet_config
+
+
+@api_router.put("/outlets/{outlet_id}/config")
+async def update_outlet_config(outlet_id: str, update: OutletConfigUpdate, user=Depends(get_current_user)):
+    """Update outlet configuration with validation."""
     if user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner access required")
+    
+    outlet = await db.outlets.find_one({"id": outlet_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+    
     update_dict = {k: v for k, v in update.dict().items() if v is not None}
     if not update_dict:
         raise HTTPException(status_code=400, detail="No fields to update")
-    result = await db.outlets.update_one({"id": outlet_id, "org_id": user["org_id"]}, {"$set": update_dict})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Outlet not found")
-    updated = await db.outlets.find_one({"id": outlet_id}, {"_id": 0})
-    return updated
+    
+    # Apply country mode defaults if changing country mode
+    if "country_mode" in update_dict:
+        mode = update_dict["country_mode"]
+        if mode == "india":
+            defaults = COUNTRY_CONFIGS["india"]
+        else:
+            # Use the existing country or default to UAE for international
+            country = update_dict.get("country", outlet.get("country", "UAE")).lower().replace(" ", "_")
+            defaults = COUNTRY_CONFIGS.get(country, COUNTRY_CONFIGS["uae"])
+        
+        # Apply defaults for unspecified fields
+        if "currency" not in update_dict:
+            update_dict["currency"] = defaults["currency"]
+        if "timezone" not in update_dict:
+            update_dict["timezone"] = defaults["timezone"]
+        if "gst_enabled" not in update_dict:
+            update_dict["gst_enabled"] = defaults["gst_enabled"]
+        if "gst_rate" not in update_dict:
+            update_dict["gst_rate"] = defaults["gst_rate"]
+    
+    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.outlets.update_one(
+        {"id": outlet_id, "org_id": user["org_id"]},
+        {"$set": update_dict}
+    )
+    
+    # Fetch updated outlet with full config
+    return await get_outlet_config(outlet_id, user)
+
+
+@api_router.put("/outlets/{outlet_id}")
+async def update_outlet(outlet_id: str, update: OutletConfigUpdate, user=Depends(get_current_user)):
+    """Update outlet (backward compatible alias for config update)."""
+    return await update_outlet_config(outlet_id, update, user)
 
 
 # --- DASHBOARD ---
