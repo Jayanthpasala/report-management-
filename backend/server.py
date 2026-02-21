@@ -224,7 +224,6 @@ async def upload_document(
         parts = doc_date.split("-")
         storage_path = f"/{user['org_id']}/{outlet_id}/{parts[0]}/{parts[1]}/{parts[2]}/{doc_id}{file_ext}"
     else:
-        now = datetime.now(timezone.utc)
         storage_path = f"/{user['org_id']}/{outlet_id}/unclassified/{doc_id}{file_ext}"
 
     # Store base64 thumbnail for preview
